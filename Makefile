@@ -6,8 +6,14 @@ ACTIVITY  := $(PACKAGE)/.MainActivity
 GRADLE    := ./gradlew
 APK_DEBUG := app/build/outputs/apk/debug/app-debug.apk
 
-.PHONY: help build install run launch debug clean rebuild test test-instrumented lint check apk \
-        devices logcat logcat-app stop uninstall deps deps-update doctor
+# Resolve adb: prefer ANDROID_HOME / ANDROID_SDK_ROOT, fall back to sdk.dir in local.properties,
+# then to whatever's on PATH.
+SDK_DIR  := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(shell awk -F= '/^sdk\.dir=/{print $$2}' local.properties 2>/dev/null))
+ADB      := $(if $(SDK_DIR),$(SDK_DIR)/platform-tools/adb,adb)
+EMULATOR := $(if $(SDK_DIR),$(SDK_DIR)/emulator/emulator,emulator)
+
+.PHONY: help build install run launch debug clean rebuild test single-test test-instrumented lint check apk \
+        devices logcat logcat-app stop uninstall deps deps-update doctor emu emu-list
 
 help:
 	@echo "Targets:"
@@ -28,13 +34,15 @@ help:
 	@echo "  make clean             Wipe app/build"
 	@echo "  make rebuild           clean + build"
 	@echo ""
+	@echo "  make emu-list          List installed AVDs"
+	@echo "  make emu AVD=<name>    Boot the named AVD in the background (omit AVD to use the first one)"
 	@echo "  make devices           List connected adb devices"
 	@echo "  make logcat            Tail full logcat"
 	@echo "  make logcat-app        Tail logcat filtered to this app's PID"
 	@echo ""
 	@echo "  make deps              Print dependency tree (debug)"
 	@echo "  make deps-update       Show available dependency updates (requires com.github.ben-manes.versions plugin)"
-	@echo "  make doctor            Print Gradle/Java/Android SDK versions"
+	@echo "  make doctor            Print Gradle/Java/adb versions and resolved SDK path"
 	@echo ""
 	@echo "  make T='pkg.Class.method' single-test     Run a single JVM test"
 
@@ -47,16 +55,16 @@ install:
 run: install launch
 
 launch:
-	adb shell am start -n $(ACTIVITY)
+	"$(ADB)" shell am start -n $(ACTIVITY)
 
 debug: install
-	adb shell am start -D -n $(ACTIVITY)
+	"$(ADB)" shell am start -D -n $(ACTIVITY)
 
 stop:
-	adb shell am force-stop $(PACKAGE)
+	"$(ADB)" shell am force-stop $(PACKAGE)
 
 uninstall:
-	adb uninstall $(PACKAGE) || true
+	"$(ADB)" uninstall $(PACKAGE) || true
 
 apk:
 	@echo $(APK_DEBUG)
@@ -82,17 +90,28 @@ lint:
 
 check: lint test
 
+emu-list:
+	"$(EMULATOR)" -list-avds
+
+# Boot an emulator headlessly in the background. Override with `make emu AVD=Pixel_8`.
+emu:
+	@AVD=$${AVD:-$$("$(EMULATOR)" -list-avds | head -n1)}; \
+	if [ -z "$$AVD" ]; then echo "No AVDs installed. Create one in Android Studio Device Manager."; exit 1; fi; \
+	echo "Starting AVD: $$AVD"; \
+	nohup "$(EMULATOR)" -avd "$$AVD" >/tmp/emulator-$$AVD.log 2>&1 & \
+	echo "Booted in background (log: /tmp/emulator-$$AVD.log). Run 'make devices' to confirm."
+
 devices:
-	adb devices -l
+	"$(ADB)" devices -l
 
 logcat:
-	adb logcat
+	"$(ADB)" logcat
 
 # Tail logcat scoped to this app's current PID (re-run after each install).
 logcat-app:
-	@PID=$$(adb shell pidof -s $(PACKAGE) 2>/dev/null); \
+	@PID=$$("$(ADB)" shell pidof -s $(PACKAGE) 2>/dev/null); \
 	if [ -z "$$PID" ]; then echo "App not running. 'make run' first."; exit 1; fi; \
-	adb logcat --pid=$$PID
+	"$(ADB)" logcat --pid=$$PID
 
 deps:
 	$(GRADLE) :app:dependencies --configuration debugRuntimeClasspath
@@ -103,5 +122,5 @@ deps-update:
 doctor:
 	@echo "== gradle =="; $(GRADLE) --version
 	@echo; echo "== java =="; java -version 2>&1
-	@echo; echo "== adb =="; adb version
-	@echo; echo "== sdk.dir =="; grep '^sdk.dir' local.properties || echo "(not set)"
+	@echo; echo "== adb =="; "$(ADB)" version 2>&1 || echo "(adb not found at $(ADB))"
+	@echo; echo "== sdk =="; echo "$(SDK_DIR)"
