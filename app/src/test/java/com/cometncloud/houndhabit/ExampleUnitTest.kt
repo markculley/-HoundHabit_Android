@@ -1,4 +1,4 @@
-package com.example.houndhabit
+package com.cometncloud.houndhabit
 
 import org.junit.Test
 

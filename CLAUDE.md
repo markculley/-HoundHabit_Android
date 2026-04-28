@@ -20,19 +20,28 @@ iOS Swift sources to port from live at `/Users/mark/dev/hound_habit/HoundHabit/`
 
 This is an Android Studio scaffold; **no app code has been ported yet.** `app/src/main/java/com/example/houndhabit/` is empty. The scaffold currently declares `appcompat` + `material` (Views toolkit), but the chosen stack per `docs/bootstrap.md` and `docs/porting_map.md` is **Jetpack Compose + Material 3**. Expect to swap the dependencies in `gradle/libs.versions.toml` and `app/build.gradle.kts` when starting Phase 1 work.
 
-Package id is `com.example.houndhabit`. `bootstrap.md` proposes `com.markculley.houndhabit` to match the iOS bundle id; either rename early or accept the mismatch — don't half-rename.
+Package id is `com.cometncloud.houndhabit`. (Diverges from `bootstrap.md`'s suggestion of `com.markculley.houndhabit`; the iOS bundle id is not being mirrored.)
 
 `local.properties` (gitignored) holds `SUPABASE_URL` / `SUPABASE_ANON_KEY` and points at the same Supabase project as iOS.
 
 ## Common commands
 
+The `Makefile` is the canonical command surface — keep it current. When a new dev workflow appears (e.g. release signing, Play Console upload, screenshot tests), add a target rather than documenting the raw Gradle invocation in prose.
+
 ```bash
-./gradlew :app:assembleDebug          # build debug APK
-./gradlew :app:test                   # JVM unit tests (src/test)
-./gradlew :app:connectedAndroidTest   # instrumented tests on a running emulator/device
-./gradlew :app:lint                   # Android Lint
-./gradlew :app:test --tests com.example.houndhabit.SomeTest.someMethod   # single test
+make help                # list all targets with descriptions
+make build               # assemble debug APK
+make run                 # install + launch on connected device/emulator
+make test                # JVM unit tests
+make test-instrumented   # instrumented tests on a running device/emulator
+make lint                # Android Lint
+make check               # lint + unit tests
+make T='com.cometncloud.houndhabit.SomeTest.someMethod' single-test
+make logcat-app          # tail logcat filtered to this app's PID
+make doctor              # print Gradle/Java/adb versions, sdk.dir
 ```
+
+Direct `./gradlew :app:<task>` calls still work; the Makefile is just a curated index of the ones worth memorizing.
 
 ## Architecture & conventions
 
