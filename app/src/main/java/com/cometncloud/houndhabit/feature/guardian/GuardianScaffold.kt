@@ -30,6 +30,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cometncloud.houndhabit.feature.guardian.dashboard.DashboardScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetDetailScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetListScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetViewModel
@@ -85,7 +86,7 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            composable(Routes.HOME) { ComingSoon("Home", "Streaks and dashboard arrive in Phase 5.") }
+            composable(Routes.HOME) { DashboardScreen() }
 
             composable(Routes.PETS) {
                 PetListScreen(
