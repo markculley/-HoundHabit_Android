@@ -111,3 +111,22 @@ The guardian's `ResourceListView` queries `resources` filtered by `guardian_id =
 | Photo upload to guardian's storage folder | Allowed via updated storage policy for linked trainers |
 | Guardian deletes trainer-added resource | Permitted — `guardian_id = auth.uid()` satisfies DELETE policy |
 | Trainer deletes their own added resource | Permitted — `added_by_id = auth.uid()` satisfies DELETE policy |
+
+---
+
+## Notes
+
+### Known bug — orphaned storage objects on delete (iOS + Android)
+
+When a Photo-kind resource is deleted, **the storage object is left behind**. Both clients call `ResourceService.deleteResource(id)` which only removes the `resources` row; neither client calls `supabase.storage.from("resources").remove(...)`. The storage path (`{guardianId}/{resourceId}.jpg`) becomes orphaned: no DB row references it, RLS still forbids new clients from accessing it, but it occupies bucket storage forever.
+
+**Confirmed empirically in Phase 6 testing** (Android). User created a Photo resource, then deleted it from the detail screen. Result:
+
+- `public.resources` — row gone
+- `storage.objects` (bucket `resources`) — `{userId}/{resourceId}.jpg` still present, ~1 MB
+
+The same shape almost certainly applies to **pet-photos** on `Pet` deletion (`PetService.deletePet` only removes the row), and to any future buckets that store per-row content.
+
+**Recommended fix (single-stroke, both clients):** add a Postgres trigger on `resources` AFTER DELETE that calls `storage.delete_object('resources', OLD.guardian_id || '/' || OLD.id || '.jpg')` (and an analogous trigger for `pets` → `pet-photos`). Server-side cleanup means clients don't need to coordinate the two deletes (which would also race on a flaky network and leave inconsistent state).
+
+Until then, neither client surfaces this to the user — the file is invisible from the UI but consumes storage quota. Worth a one-time `storage.objects` sweep before launch.

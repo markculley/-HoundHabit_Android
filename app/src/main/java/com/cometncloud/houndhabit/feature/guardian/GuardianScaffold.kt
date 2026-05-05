@@ -38,6 +38,9 @@ import com.cometncloud.houndhabit.feature.guardian.records.PetFilter
 import com.cometncloud.houndhabit.feature.guardian.records.TrainingRecordDetailScreen
 import com.cometncloud.houndhabit.feature.guardian.records.TrainingRecordListScreen
 import com.cometncloud.houndhabit.feature.guardian.records.TrainingRecordViewModel
+import com.cometncloud.houndhabit.feature.guardian.resources.ResourceDetailScreen
+import com.cometncloud.houndhabit.feature.guardian.resources.ResourceListScreen
+import com.cometncloud.houndhabit.feature.guardian.resources.ResourceViewModel
 
 private object Routes {
     const val HOME = "home"
@@ -47,12 +50,14 @@ private object Routes {
     const val SESSION_DETAIL = "sessions/detail"
     const val PLANS = "plans"
     const val RESOURCES = "resources"
+    const val RESOURCE_DETAIL = "resources/detail"
     const val SETTINGS = "settings"
 
     fun petDetail(id: String) = "$PETS_DETAIL/$id"
     fun petSessions(petId: String, petName: String) =
         "$PET_SESSIONS/$petId?name=${java.net.URLEncoder.encode(petName, "UTF-8")}"
     fun sessionDetail(recordId: String) = "$SESSION_DETAIL/$recordId"
+    fun resourceDetail(resourceId: String) = "$RESOURCE_DETAIL/$resourceId"
 }
 
 private data class GuardianTab(
@@ -75,6 +80,7 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
     // Scope shared ViewModels above the NavHost so list + detail screens share the same instance.
     val petViewModel: PetViewModel = viewModel()
     val recordViewModel: TrainingRecordViewModel = viewModel()
+    val resourceViewModel: ResourceViewModel = viewModel()
 
     Scaffold(
         bottomBar = { BottomBar(navController) },
@@ -136,7 +142,24 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
             }
 
             composable(Routes.PLANS) { ComingSoon("Plans", "Training plans arrive in Phase 9.") }
-            composable(Routes.RESOURCES) { ComingSoon("Resources", "Resources arrive in Phase 6.") }
+            composable(Routes.RESOURCES) {
+                ResourceListScreen(
+                    viewModel = resourceViewModel,
+                    onResourceClick = { resource ->
+                        navController.navigate(Routes.resourceDetail(resource.id))
+                    },
+                )
+            }
+            composable(
+                route = "${Routes.RESOURCE_DETAIL}/{resourceId}",
+            ) { backStack ->
+                val resourceId = backStack.arguments?.getString("resourceId").orEmpty()
+                ResourceDetailScreen(
+                    resourceId = resourceId,
+                    viewModel = resourceViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
             composable(Routes.SETTINGS) { SettingsPlaceholder(onSignOut) }
         }
     }
@@ -153,7 +176,9 @@ private fun BottomBar(navController: NavHostController) {
                     currentRoute?.startsWith(Routes.PETS_DETAIL) == true ||
                         currentRoute?.startsWith(Routes.PET_SESSIONS) == true ||
                         currentRoute?.startsWith(Routes.SESSION_DETAIL) == true
-                ))
+                )) ||
+                (tab.route == Routes.RESOURCES &&
+                    currentRoute?.startsWith(Routes.RESOURCE_DETAIL) == true)
             NavigationBarItem(
                 selected = selected,
                 onClick = {
