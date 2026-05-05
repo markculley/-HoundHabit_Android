@@ -33,16 +33,25 @@ import androidx.navigation.compose.rememberNavController
 import com.cometncloud.houndhabit.feature.guardian.pets.PetDetailScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetListScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetViewModel
+import com.cometncloud.houndhabit.feature.guardian.records.PetFilter
+import com.cometncloud.houndhabit.feature.guardian.records.TrainingRecordDetailScreen
+import com.cometncloud.houndhabit.feature.guardian.records.TrainingRecordListScreen
+import com.cometncloud.houndhabit.feature.guardian.records.TrainingRecordViewModel
 
 private object Routes {
     const val HOME = "home"
     const val PETS = "pets"
     const val PETS_DETAIL = "pets/detail"
+    const val PET_SESSIONS = "pet/sessions"
+    const val SESSION_DETAIL = "sessions/detail"
     const val PLANS = "plans"
     const val RESOURCES = "resources"
     const val SETTINGS = "settings"
 
     fun petDetail(id: String) = "$PETS_DETAIL/$id"
+    fun petSessions(petId: String, petName: String) =
+        "$PET_SESSIONS/$petId?name=${java.net.URLEncoder.encode(petName, "UTF-8")}"
+    fun sessionDetail(recordId: String) = "$SESSION_DETAIL/$recordId"
 }
 
 private data class GuardianTab(
@@ -62,8 +71,9 @@ private val tabs = listOf(
 @Composable
 fun GuardianScaffold(onSignOut: () -> Unit) {
     val navController = rememberNavController()
-    // Scope PetViewModel above the NavHost so list + detail share the same instance.
+    // Scope shared ViewModels above the NavHost so list + detail screens share the same instance.
     val petViewModel: PetViewModel = viewModel()
+    val recordViewModel: TrainingRecordViewModel = viewModel()
 
     Scaffold(
         bottomBar = { BottomBar(navController) },
@@ -87,9 +97,39 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
                 route = "${Routes.PETS_DETAIL}/{petId}",
             ) { backStack ->
                 val petId = backStack.arguments?.getString("petId").orEmpty()
+                val petName = petViewModel.state.value.pets.firstOrNull { it.id == petId }?.name
                 PetDetailScreen(
                     petId = petId,
                     viewModel = petViewModel,
+                    onBack = { navController.popBackStack() },
+                    onTrainingSessions = if (petName != null) {
+                        { navController.navigate(Routes.petSessions(petId, petName)) }
+                    } else null,
+                )
+            }
+            composable(
+                route = "${Routes.PET_SESSIONS}/{petId}?name={name}",
+            ) { backStack ->
+                val petId = backStack.arguments?.getString("petId").orEmpty()
+                val petName = backStack.arguments?.getString("name")
+                    ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                    .orEmpty()
+                TrainingRecordListScreen(
+                    viewModel = recordViewModel,
+                    petFilter = PetFilter(petId = petId, petName = petName),
+                    onBack = { navController.popBackStack() },
+                    onRecordClick = { record ->
+                        navController.navigate(Routes.sessionDetail(record.id))
+                    },
+                )
+            }
+            composable(
+                route = "${Routes.SESSION_DETAIL}/{recordId}",
+            ) { backStack ->
+                val recordId = backStack.arguments?.getString("recordId").orEmpty()
+                TrainingRecordDetailScreen(
+                    recordId = recordId,
+                    viewModel = recordViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -108,7 +148,11 @@ private fun BottomBar(navController: NavHostController) {
     NavigationBar {
         tabs.forEach { tab ->
             val selected = currentRoute == tab.route ||
-                (tab.route == Routes.PETS && currentRoute?.startsWith(Routes.PETS_DETAIL) == true)
+                (tab.route == Routes.PETS && (
+                    currentRoute?.startsWith(Routes.PETS_DETAIL) == true ||
+                        currentRoute?.startsWith(Routes.PET_SESSIONS) == true ||
+                        currentRoute?.startsWith(Routes.SESSION_DETAIL) == true
+                ))
             NavigationBarItem(
                 selected = selected,
                 onClick = {
