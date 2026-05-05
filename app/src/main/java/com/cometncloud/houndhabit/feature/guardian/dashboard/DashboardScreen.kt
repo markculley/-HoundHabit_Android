@@ -96,13 +96,30 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
                 )
             }
 
-            // Trainer section — fills in once Phase 7 wires inviteService.
             CardSection(label = "Your Trainer") {
-                Text(
-                    "No trainer linked yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                val trainer = state.linkedTrainer
+                if (trainer != null) {
+                    Column {
+                        Text(
+                            trainer.profile.fullName ?: "Trainer",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        val linkedAt = trainer.linkedAt
+                        if (linkedAt != null) {
+                            Text(
+                                "Linked ${formatLinkedDate(linkedAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        "No trainer linked yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -262,3 +279,10 @@ val BadgeType.color: Color
         BadgeType.SevenDayStreak -> Color(0xFFFB8C00)
         BadgeType.ThirtyDayStreak -> Color(0xFFFDD835)
     }
+
+private fun formatLinkedDate(instant: kotlinx.datetime.Instant): String {
+    val df = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).apply {
+        timeZone = java.util.TimeZone.getTimeZone(kotlinx.datetime.TimeZone.currentSystemDefault().id)
+    }
+    return df.format(java.util.Date(instant.toEpochMilliseconds()))
+}

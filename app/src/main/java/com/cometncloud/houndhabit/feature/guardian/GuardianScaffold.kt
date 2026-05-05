@@ -31,6 +31,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cometncloud.houndhabit.feature.guardian.dashboard.DashboardScreen
+import com.cometncloud.houndhabit.feature.guardian.settings.EnterInviteCodeScreen
+import com.cometncloud.houndhabit.feature.guardian.settings.SettingsScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetDetailScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetListScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetViewModel
@@ -52,6 +54,7 @@ private object Routes {
     const val RESOURCES = "resources"
     const val RESOURCE_DETAIL = "resources/detail"
     const val SETTINGS = "settings"
+    const val ENTER_INVITE_CODE = "settings/enter-code"
 
     fun petDetail(id: String) = "$PETS_DETAIL/$id"
     fun petSessions(petId: String, petName: String) =
@@ -160,7 +163,18 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
                     onBack = { navController.popBackStack() },
                 )
             }
-            composable(Routes.SETTINGS) { SettingsPlaceholder(onSignOut) }
+            composable(Routes.SETTINGS) {
+                SettingsScreen(
+                    isTrainer = false,
+                    onSignOut = onSignOut,
+                    onEnterInviteCode = { navController.navigate(Routes.ENTER_INVITE_CODE) },
+                )
+            }
+            composable(Routes.ENTER_INVITE_CODE) {
+                EnterInviteCodeScreen(
+                    onDone = { navController.popBackStack() },
+                )
+            }
         }
     }
 }
@@ -178,7 +192,9 @@ private fun BottomBar(navController: NavHostController) {
                         currentRoute?.startsWith(Routes.SESSION_DETAIL) == true
                 )) ||
                 (tab.route == Routes.RESOURCES &&
-                    currentRoute?.startsWith(Routes.RESOURCE_DETAIL) == true)
+                    currentRoute?.startsWith(Routes.RESOURCE_DETAIL) == true) ||
+                (tab.route == Routes.SETTINGS &&
+                    currentRoute == Routes.ENTER_INVITE_CODE)
             NavigationBarItem(
                 selected = selected,
                 onClick = {
@@ -213,21 +229,3 @@ private fun ComingSoon(title: String, description: String) {
     }
 }
 
-@Composable
-private fun SettingsPlaceholder(onSignOut: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Account, notifications, trainer linking arrive in later phases.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        TextButton(onClick = onSignOut) { Text("Sign out") }
-    }
-}

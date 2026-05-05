@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cometncloud.houndhabit.core.SupabaseClient
 import com.cometncloud.houndhabit.core.models.Badge
+import com.cometncloud.houndhabit.core.models.LinkedTrainer
 import com.cometncloud.houndhabit.core.models.Pet
 import com.cometncloud.houndhabit.core.models.TrainingRecord
 import com.cometncloud.houndhabit.core.services.BadgeService
+import com.cometncloud.houndhabit.core.services.InviteService
 import com.cometncloud.houndhabit.core.services.PetService
 import com.cometncloud.houndhabit.core.services.TrainingRecordService
 import io.github.jan.supabase.auth.auth
@@ -29,6 +31,7 @@ data class DashboardUiState(
     val pets: List<Pet> = emptyList(),
     val records: List<TrainingRecord> = emptyList(),
     val badges: List<Badge> = emptyList(),
+    val linkedTrainer: LinkedTrainer? = null,
     val currentStreak: Int = 0,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -41,6 +44,7 @@ class DashboardViewModel(
     private val petService: PetService = PetService(),
     private val recordService: TrainingRecordService = TrainingRecordService(),
     private val badgeService: BadgeService = BadgeService(),
+    private val inviteService: InviteService = InviteService(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())
@@ -55,18 +59,20 @@ class DashboardViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                val (pets, records, badges) = coroutineScope {
+                val result = coroutineScope {
                     val p = async { petService.fetchPets(userId) }
                     val r = async { recordService.fetchRecords(userId) }
                     val b = async { runCatching { badgeService.fetchBadges(userId) }.getOrDefault(emptyList()) }
-                    Triple(p.await(), r.await(), b.await())
+                    val t = async { runCatching { inviteService.fetchLinkedTrainer() }.getOrNull() }
+                    DashboardLoadResult(p.await(), r.await(), b.await(), t.await())
                 }
                 _state.update {
                     it.copy(
-                        pets = pets,
-                        records = records,
-                        badges = badges,
-                        currentStreak = computeStreak(records.map { rec -> rec.recordedAt }),
+                        pets = result.pets,
+                        records = result.records,
+                        badges = result.badges,
+                        linkedTrainer = result.linkedTrainer,
+                        currentStreak = computeStreak(result.records.map { rec -> rec.recordedAt }),
                     )
                 }
             } catch (t: Throwable) {
@@ -77,6 +83,13 @@ class DashboardViewModel(
         }
     }
 }
+
+private data class DashboardLoadResult(
+    val pets: List<Pet>,
+    val records: List<TrainingRecord>,
+    val badges: List<Badge>,
+    val linkedTrainer: LinkedTrainer?,
+)
 
 /**
  * Pure streak computation — extracted as a top-level function for testability.

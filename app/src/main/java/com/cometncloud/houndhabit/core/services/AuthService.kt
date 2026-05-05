@@ -52,11 +52,14 @@ class AuthService {
 
     suspend fun currentProfile(): Profile? {
         val userId = supabase.auth.currentUserOrNull()?.id ?: return null
-        return supabase.postgrest
+        return fetchProfile(userId)
+    }
+
+    suspend fun fetchProfile(userId: String): Profile? =
+        supabase.postgrest
             .from("profiles")
             .select { filter { eq("id", userId) } }
             .decodeSingleOrNull()
-    }
 }
 
 private val Role.wireValue: String

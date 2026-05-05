@@ -13,17 +13,18 @@ ADB      := $(if $(SDK_DIR),$(SDK_DIR)/platform-tools/adb,adb)
 EMULATOR := $(if $(SDK_DIR),$(SDK_DIR)/emulator/emulator,emulator)
 
 .PHONY: help build install run launch debug clean rebuild test single-test test-instrumented lint check apk \
-        devices logcat logcat-app logcat-auth logcat-clear logcat-dump stop uninstall deps deps-update doctor emu emu-list
+        devices logcat logcat-app logcat-auth logcat-clear logcat-dump stop uninstall deps deps-update doctor emu emu-pair emu-list kill-emus
 
 help:
 	@echo "Targets:"
 	@echo "  make build              Assemble debug APK"
-	@echo "  make install            Build + install debug APK on connected device/emulator"
-	@echo "  make run                Install + launch on connected device/emulator"
-	@echo "  make launch             Launch already-installed app"
+	@echo "  make install            Build + install debug APK on every attached device"
+	@echo "  make run                Install + launch on every attached device"
+	@echo "  make launch             Launch already-installed app on every attached device"
 	@echo "  make debug              Install + launch with debugger waiting"
 	@echo "  make stop               Force-stop the app"
-	@echo "  make uninstall          Uninstall debug APK from device"
+	@echo "  make uninstall          Uninstall debug APK"
+	@echo "                          (launch/debug/stop/uninstall: pass D=<serial> to target one device)"
 	@echo "  make apk                Print path to built debug APK"
 	@echo ""
 	@echo "  make test              JVM unit tests (app/src/test)"
@@ -36,6 +37,12 @@ help:
 	@echo ""
 	@echo "  make emu-list          List installed AVDs"
 	@echo "  make emu AVD=<name>    Boot the named AVD in the background (omit AVD to use the first one)"
+	@echo "  make emu-pair          Boot two emulator instances on ports 5554 + 5556 (for trainer/guardian side-by-side)"
+	@echo "                         Defaults: AVD1=first listed, AVD2=second listed (or AVD1 twice with -read-only if only one exists)"
+	@echo "                         Override: make emu-pair AVD1=Pixel_8 AVD2=Pixel_8a"
+	@echo "                         Note: when sharing one AVD, BOTH instances must run -read-only — kill any existing"
+	@echo "                         emulator first (make kill-emus) so they don't fight for the disk lock."
+	@echo "  make kill-emus         Send 'emu kill' to every connected emulator"
 	@echo "  make devices           List connected adb devices"
 	@echo "  make logcat            Tail full logcat"
 	@echo "  make logcat-app        Tail logcat filtered to this app's PID"
@@ -57,17 +64,41 @@ install:
 
 run: install launch
 
+# Pick targets: if D=<serial> is set, just that one; otherwise every device in
+# 'device' state. `installDebug` already installs on every attached device, so
+# launch/debug/stop default to fanning out across all of them too — necessary
+# when `make emu-pair` has two emulators up.
 launch:
-	"$(ADB)" shell am start -n $(ACTIVITY)
+	@TARGETS="$${D:-$$("$(ADB)" devices | awk '$$2=="device"{print $$1}')}"; \
+	if [ -z "$$TARGETS" ]; then echo "No devices attached."; exit 1; fi; \
+	for s in $$TARGETS; do \
+	  echo "Launching on $$s"; \
+	  "$(ADB)" -s $$s shell am start -n $(ACTIVITY); \
+	done
 
 debug: install
-	"$(ADB)" shell am start -D -n $(ACTIVITY)
+	@TARGETS="$${D:-$$("$(ADB)" devices | awk '$$2=="device"{print $$1}')}"; \
+	if [ -z "$$TARGETS" ]; then echo "No devices attached."; exit 1; fi; \
+	for s in $$TARGETS; do \
+	  echo "Launching (debug) on $$s"; \
+	  "$(ADB)" -s $$s shell am start -D -n $(ACTIVITY); \
+	done
 
 stop:
-	"$(ADB)" shell am force-stop $(PACKAGE)
+	@TARGETS="$${D:-$$("$(ADB)" devices | awk '$$2=="device"{print $$1}')}"; \
+	if [ -z "$$TARGETS" ]; then echo "No devices attached."; exit 1; fi; \
+	for s in $$TARGETS; do \
+	  echo "Stopping on $$s"; \
+	  "$(ADB)" -s $$s shell am force-stop $(PACKAGE); \
+	done
 
 uninstall:
-	"$(ADB)" uninstall $(PACKAGE) || true
+	@TARGETS="$${D:-$$("$(ADB)" devices | awk '$$2=="device"{print $$1}')}"; \
+	if [ -z "$$TARGETS" ]; then echo "No devices attached."; exit 1; fi; \
+	for s in $$TARGETS; do \
+	  echo "Uninstalling on $$s"; \
+	  "$(ADB)" -s $$s uninstall $(PACKAGE) || true; \
+	done
 
 apk:
 	@echo $(APK_DEBUG)
@@ -104,6 +135,35 @@ emu:
 	nohup "$(EMULATOR)" -avd "$$AVD" >/tmp/emulator-$$AVD.log 2>&1 & \
 	echo "Booted in background (log: /tmp/emulator-$$AVD.log). Run 'make devices' to confirm."
 
+# Boot two emulator instances side-by-side — useful for trainer/guardian dual-account testing.
+# Each instance shows up in `adb devices` separately (emulator-5554 and emulator-5556).
+# Same-AVD mode requires -read-only on BOTH instances (the emulator refuses parallel
+# instances of one AVD unless every one is read-only). Distinct-AVD mode boots normally.
+# If you have a stale emulator running, `make kill-emus` first.
+emu-pair:
+	@AVDS=$$("$(EMULATOR)" -list-avds); \
+	AVD1=$${AVD1:-$$(echo "$$AVDS" | sed -n '1p')}; \
+	AVD2=$${AVD2:-$$(echo "$$AVDS" | sed -n '2p')}; \
+	if [ -z "$$AVD1" ]; then echo "No AVDs installed. Create one in Android Studio Device Manager."; exit 1; fi; \
+	if [ -z "$$AVD2" ] || [ "$$AVD1" = "$$AVD2" ]; then \
+	  echo "Single-AVD mode: booting two read-only instances of $$AVD1 (state isolated per session, not persisted)."; \
+	  nohup "$(EMULATOR)" -avd "$$AVD1" -port 5554 -read-only >/tmp/emulator-5554-$$AVD1.log 2>&1 & \
+	  nohup "$(EMULATOR)" -avd "$$AVD1" -port 5556 -read-only >/tmp/emulator-5556-$$AVD1.log 2>&1 & \
+	else \
+	  echo "Booting #1: $$AVD1 on port 5554"; \
+	  nohup "$(EMULATOR)" -avd "$$AVD1" -port 5554 >/tmp/emulator-5554-$$AVD1.log 2>&1 & \
+	  echo "Booting #2: $$AVD2 on port 5556"; \
+	  nohup "$(EMULATOR)" -avd "$$AVD2" -port 5556 >/tmp/emulator-5556-$$AVD2.log 2>&1 & \
+	fi; \
+	echo "Both booting. Run 'make devices' once they finish; logs in /tmp/emulator-555{4,6}-*.log."
+
+# Kill every currently-attached emulator. Useful before `make emu-pair` if you have a
+# stale single instance running that holds the AVD's disk lock.
+kill-emus:
+	@for s in $$("$(ADB)" devices | awk '/^emulator-/{print $$1}'); do \
+	  echo "Killing $$s"; "$(ADB)" -s $$s emu kill || true; \
+	done
+
 devices:
 	"$(ADB)" devices -l
 
@@ -111,10 +171,17 @@ logcat:
 	"$(ADB)" logcat
 
 # Tail logcat scoped to this app's current PID (re-run after each install).
+# With multiple devices attached, set D=<serial> to pick one (e.g. D=emulator-5554).
 logcat-app:
-	@PID=$$("$(ADB)" shell pidof -s $(PACKAGE) 2>/dev/null); \
-	if [ -z "$$PID" ]; then echo "App not running. 'make run' first."; exit 1; fi; \
-	"$(ADB)" logcat --pid=$$PID
+	@TARGETS="$${D:-$$("$(ADB)" devices | awk '$$2=="device"{print $$1}')}"; \
+	if [ -z "$$TARGETS" ]; then echo "No devices attached."; exit 1; fi; \
+	COUNT=$$(echo "$$TARGETS" | wc -w | tr -d ' '); \
+	if [ "$$COUNT" -gt 1 ]; then \
+	  echo "Multiple devices attached. Pass D=<serial> (one of: $$TARGETS)."; exit 1; \
+	fi; \
+	PID=$$("$(ADB)" -s $$TARGETS shell pidof -s $(PACKAGE) 2>/dev/null); \
+	if [ -z "$$PID" ]; then echo "App not running on $$TARGETS. 'make run' first."; exit 1; fi; \
+	"$(ADB)" -s $$TARGETS logcat --pid=$$PID
 
 # Tail logcat across all processes for auth-flow diagnostics.
 # Captures both our app and the system Google Play Services process where the
