@@ -12,6 +12,7 @@ val localProperties = Properties().apply {
 }
 val supabaseUrl: String = localProperties.getProperty("SUPABASE_URL", "")
 val supabaseAnonKey: String = localProperties.getProperty("SUPABASE_ANON_KEY", "")
+val googleWebClientId: String = localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")
 
 android {
     namespace = "com.cometncloud.houndhabit"
@@ -32,6 +33,7 @@ android {
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     buildTypes {

@@ -14,19 +14,24 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cometncloud.houndhabit.core.services.GoogleSignInClient
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
@@ -34,6 +39,8 @@ fun LoginScreen(
     onSignUpClick: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -108,6 +115,27 @@ fun LoginScreen(
             } else {
                 Text("Sign In")
             }
+        }
+
+        OutlinedButton(
+            onClick = {
+                coroutineScope.launch {
+                    try {
+                        val result = GoogleSignInClient.requestIdToken(context)
+                        if (result != null) {
+                            viewModel.onGoogleIdToken(result.idToken, result.rawNonce)
+                        }
+                    } catch (t: Throwable) {
+                        viewModel.setError(t.message ?: "Google Sign-In failed.")
+                    }
+                }
+            },
+            enabled = !state.isLoading,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+        ) {
+            Text("Continue with Google")
         }
 
         TextButton(onClick = onSignUpClick) {

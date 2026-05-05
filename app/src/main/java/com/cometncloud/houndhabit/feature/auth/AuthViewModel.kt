@@ -45,6 +45,23 @@ class AuthViewModel(
         }
     }
 
+    fun onGoogleIdToken(idToken: String, rawNonce: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                authService.signInWithGoogle(idToken, rawNonce)
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = friendlyMessage(t)) }
+            } finally {
+                _state.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
+    fun setError(message: String) {
+        _state.update { it.copy(errorMessage = message, isLoading = false) }
+    }
+
     fun signUp() {
         val s = _state.value
         viewModelScope.launch {

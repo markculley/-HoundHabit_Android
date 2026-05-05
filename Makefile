@@ -13,7 +13,7 @@ ADB      := $(if $(SDK_DIR),$(SDK_DIR)/platform-tools/adb,adb)
 EMULATOR := $(if $(SDK_DIR),$(SDK_DIR)/emulator/emulator,emulator)
 
 .PHONY: help build install run launch debug clean rebuild test single-test test-instrumented lint check apk \
-        devices logcat logcat-app stop uninstall deps deps-update doctor emu emu-list
+        devices logcat logcat-app logcat-auth logcat-clear logcat-dump stop uninstall deps deps-update doctor emu emu-list
 
 help:
 	@echo "Targets:"
@@ -39,6 +39,9 @@ help:
 	@echo "  make devices           List connected adb devices"
 	@echo "  make logcat            Tail full logcat"
 	@echo "  make logcat-app        Tail logcat filtered to this app's PID"
+	@echo "  make logcat-auth       Tail logcat (all processes) filtered to auth tags"
+	@echo "  make logcat-clear      Wipe the logcat buffer"
+	@echo "  make logcat-dump       One-shot dump of recent logs filtered to auth tags (N=800)"
 	@echo ""
 	@echo "  make deps              Print dependency tree (debug)"
 	@echo "  make deps-update       Show available dependency updates (requires com.github.ben-manes.versions plugin)"
@@ -112,6 +115,21 @@ logcat-app:
 	@PID=$$("$(ADB)" shell pidof -s $(PACKAGE) 2>/dev/null); \
 	if [ -z "$$PID" ]; then echo "App not running. 'make run' first."; exit 1; fi; \
 	"$(ADB)" logcat --pid=$$PID
+
+# Tail logcat across all processes for auth-flow diagnostics.
+# Captures both our app and the system Google Play Services process where the
+# real Credential Manager / Google Sign-In errors are logged.
+logcat-auth:
+	"$(ADB)" logcat -c
+	"$(ADB)" logcat | grep --line-buffered -iE 'HoundHabitAuth|CredMan|GoogleApi|GoogleId|gms\.auth|gms\.signin|signinwithgoogle|IdentityCredential'
+
+# One-shot dump of the last N lines of logcat (default 800), filtered to auth tags.
+# Workflow: `make logcat-clear`, do the failing action in the app, then `make logcat-dump`.
+logcat-clear:
+	"$(ADB)" logcat -c
+
+logcat-dump:
+	"$(ADB)" logcat -d -t $${N:-800} | grep -iE 'HoundHabitAuth|CredMan|GoogleApi|GoogleId|gms\.auth|gms\.signin|signinwithgoogle|IdentityCredential'
 
 deps:
 	$(GRADLE) :app:dependencies --configuration debugRuntimeClasspath

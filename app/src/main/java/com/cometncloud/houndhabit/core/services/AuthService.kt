@@ -4,7 +4,9 @@ import com.cometncloud.houndhabit.core.SupabaseClient
 import com.cometncloud.houndhabit.core.models.Profile
 import com.cometncloud.houndhabit.core.models.Role
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -29,6 +31,14 @@ class AuthService {
         supabase.auth.signInWith(Email) {
             this.email = email
             this.password = password
+        }
+    }
+
+    suspend fun signInWithGoogle(idToken: String, rawNonce: String) {
+        supabase.auth.signInWith(IDToken) {
+            this.provider = Google
+            this.idToken = idToken
+            this.nonce = rawNonce
         }
     }
 
