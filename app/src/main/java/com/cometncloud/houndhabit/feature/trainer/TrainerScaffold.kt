@@ -38,6 +38,9 @@ import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianListScreen
 import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianListViewModel
 import com.cometncloud.houndhabit.feature.trainer.invite.InviteScreen
 import com.cometncloud.houndhabit.feature.trainer.invite.InviteViewModel
+import com.cometncloud.houndhabit.feature.trainer.plans.PlanDetailScreen
+import com.cometncloud.houndhabit.feature.trainer.plans.PlanListScreen
+import com.cometncloud.houndhabit.feature.trainer.plans.TrainerPlanViewModel
 import io.github.jan.supabase.auth.auth
 
 private object Routes {
@@ -45,11 +48,13 @@ private object Routes {
     const val GUARDIAN_DETAIL = "guardians/detail"
     const val GUARDIAN_RECORD_DETAIL = "guardians/record"
     const val PLANS = "plans"
+    const val PLAN_DETAIL = "plans/detail"
     const val INVITE = "invite"
     const val SETTINGS = "settings"
 
     fun guardianDetail(linkId: String) = "$GUARDIAN_DETAIL/$linkId"
     fun guardianRecordDetail(recordId: String) = "$GUARDIAN_RECORD_DETAIL/$recordId"
+    fun planDetail(planId: String) = "$PLAN_DETAIL/$planId"
 }
 
 private data class TrainerTab(val route: String, val label: String, val icon: ImageVector)
@@ -70,6 +75,8 @@ fun TrainerScaffold(onSignOut: () -> Unit) {
     // share one VM instance — the record-detail entry needs the comments map
     // and pets cache that detail loaded.
     val guardianDetailViewModel: GuardianDetailViewModel = viewModel()
+    // Hoisted so the plan-list and plan-detail screens share state.
+    val trainerPlanViewModel: TrainerPlanViewModel = viewModel()
 
     Scaffold(bottomBar = { BottomBar(navController) }) { padding ->
         NavHost(
@@ -134,7 +141,18 @@ fun TrainerScaffold(onSignOut: () -> Unit) {
                 }
             }
             composable(Routes.PLANS) {
-                ComingSoon("Plans", "Trainer plan authoring arrives in Phase 9.")
+                PlanListScreen(
+                    viewModel = trainerPlanViewModel,
+                    onPlanClick = { plan -> navController.navigate(Routes.planDetail(plan.id)) },
+                )
+            }
+            composable("${Routes.PLAN_DETAIL}/{planId}") { backStack ->
+                val planId = backStack.arguments?.getString("planId").orEmpty()
+                PlanDetailScreen(
+                    planId = planId,
+                    viewModel = trainerPlanViewModel,
+                    onBack = { navController.popBackStack() },
+                )
             }
             composable(Routes.INVITE) {
                 InviteScreen(viewModel = inviteViewModel)
@@ -160,7 +178,9 @@ private fun BottomBar(navController: NavHostController) {
                 (tab.route == Routes.GUARDIANS && (
                     currentRoute?.startsWith(Routes.GUARDIAN_DETAIL) == true ||
                         currentRoute?.startsWith(Routes.GUARDIAN_RECORD_DETAIL) == true
-                ))
+                )) ||
+                (tab.route == Routes.PLANS &&
+                    currentRoute?.startsWith(Routes.PLAN_DETAIL) == true)
             NavigationBarItem(
                 selected = selected,
                 onClick = {
