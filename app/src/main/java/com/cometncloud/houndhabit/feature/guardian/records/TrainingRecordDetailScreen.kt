@@ -40,16 +40,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.cometncloud.houndhabit.core.SupabaseClient
+import com.cometncloud.houndhabit.core.models.Comment
 import com.cometncloud.houndhabit.core.models.TrainingRecord
 import com.cometncloud.houndhabit.core.models.label
+import com.cometncloud.houndhabit.core.services.CommentService
 import com.cometncloud.houndhabit.shared.components.StatusBadge
+import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import java.text.DateFormat
 import java.util.Date
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Guardian-side record detail. Looks up the record from the shared
+ * [TrainingRecordViewModel], wires edit/delete/share, and self-loads any
+ * trainer comments so they show up read-only.
+ */
 @Composable
 fun TrainingRecordDetailScreen(
     recordId: String,
@@ -57,49 +65,136 @@ fun TrainingRecordDetailScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    val snackbar = remember { SnackbarHostState() }
-
     val record = state.records.firstOrNull { it.id == recordId }
     val petName = record?.let { state.petNames[it.petId] } ?: "Unknown Pet"
-
-    var showEditSheet by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val currentUserId = remember { SupabaseClient.client.auth.currentUserOrNull()?.id }
 
     LaunchedEffect(record == null) {
         // If the record is gone (deleted), pop back.
         if (record == null && state.records.isNotEmpty()) onBack()
     }
-    LaunchedEffect(state.errorMessage) {
-        val msg = state.errorMessage
-        if (msg != null) {
-            snackbar.showSnackbar(msg)
-            viewModel.clearError()
+    if (record == null) return
+
+    // Guardian self-loads comments so they can read trainer comments. The
+    // closure-injection pattern below leaves `onAddComment` null, which keeps
+    // the input row hidden — guardian view is read-only for the thread.
+    val commentService = remember { CommentService() }
+    var comments by remember(record.id) { mutableStateOf<List<Comment>>(emptyList()) }
+    LaunchedEffect(record.id) {
+        runCatching { commentService.fetchComments(record.id) }
+            .getOrNull()
+            ?.let { comments = it }
+    }
+
+    RecordDetailContent(
+        record = record,
+        petName = petName,
+        isLoading = state.isLoading,
+        errorMessage = state.errorMessage,
+        onClearError = viewModel::clearError,
+        isReadOnly = false,
+        onShareToggle = { viewModel.toggleSharing(record) },
+        onEdit = null, // edit happens via the inline sheet inside content
+        onDelete = { viewModel.deleteRecord(record); onBack() },
+        useEditSheet = true,
+        viewModelForEditSheet = viewModel,
+        comments = comments,
+        currentUserId = currentUserId,
+        onAddComment = null,
+        onDeleteComment = null,
+        onBack = onBack,
+    )
+}
+
+/**
+ * Trainer-side record detail. Read-only on the record itself; the comment
+ * thread renders with input + own-comment delete via injected closures.
+ */
+@Composable
+fun TrainerRecordDetailScreen(
+    record: TrainingRecord,
+    petName: String,
+    comments: List<Comment>,
+    currentUserId: String?,
+    onAddComment: suspend (String) -> Unit,
+    onDeleteComment: suspend (Comment) -> Unit,
+    onLoadComments: () -> Unit,
+    onBack: () -> Unit,
+) {
+    LaunchedEffect(record.id) { onLoadComments() }
+
+    RecordDetailContent(
+        record = record,
+        petName = petName,
+        isLoading = false,
+        errorMessage = null,
+        onClearError = {},
+        isReadOnly = true,
+        onShareToggle = null,
+        onEdit = null,
+        onDelete = null,
+        useEditSheet = false,
+        viewModelForEditSheet = null,
+        comments = comments,
+        currentUserId = currentUserId,
+        onAddComment = onAddComment,
+        onDeleteComment = onDeleteComment,
+        onBack = onBack,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecordDetailContent(
+    record: TrainingRecord,
+    petName: String,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onClearError: () -> Unit,
+    isReadOnly: Boolean,
+    onShareToggle: (() -> Unit)?,
+    onEdit: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    useEditSheet: Boolean,
+    viewModelForEditSheet: TrainingRecordViewModel?,
+    comments: List<Comment>,
+    currentUserId: String?,
+    onAddComment: (suspend (String) -> Unit)?,
+    onDeleteComment: (suspend (Comment) -> Unit)?,
+    onBack: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var showEditSheet by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            snackbar.showSnackbar(errorMessage)
+            onClearError()
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(record?.let { formatDay(it.recordedAt) } ?: "Session") },
+                title = { Text(formatDay(record.recordedAt)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    if (record != null) {
-                        TextButton(onClick = { showEditSheet = true }) { Text("Edit") }
+                    if (!isReadOnly) {
+                        TextButton(onClick = {
+                            if (useEditSheet) showEditSheet = true else onEdit?.invoke()
+                        }) { Text("Edit") }
                     }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        if (record == null) {
-            Spacer(Modifier.size(0.dp))
-            return@Scaffold
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -137,48 +232,58 @@ fun TrainingRecordDetailScreen(
                 }
             }
 
-            // Plan-linked sessions skip this; until Phase 9 ships, plan_item_id is always null,
-            // so always show the toggle.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    "Share with Trainer",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = record.isShared,
-                    onCheckedChange = { viewModel.toggleSharing(record) },
-                )
+            if (!isReadOnly && onShareToggle != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "Share with Trainer",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = record.isShared,
+                        onCheckedChange = { onShareToggle() },
+                    )
+                }
             }
 
             HorizontalDivider()
 
-            TextButton(
-                onClick = { showDeleteConfirm = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Delete Session", color = MaterialTheme.colorScheme.error)
+            CommentThread(
+                comments = comments,
+                currentUserId = currentUserId,
+                onAddComment = onAddComment,
+                onDeleteComment = onDeleteComment,
+            )
+
+            if (!isReadOnly && onDelete != null) {
+                HorizontalDivider()
+                TextButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Delete Session", color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
 
-    if (showEditSheet && record != null) {
+    if (showEditSheet && useEditSheet && viewModelForEditSheet != null) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { showEditSheet = false },
             sheetState = sheetState,
         ) {
             TrainingRecordFormScreen(
-                pets = state.pets,
+                pets = viewModelForEditSheet.state.value.pets,
                 preselectedPetId = record.petId,
                 editing = record,
-                isSaving = state.isLoading,
+                isSaving = isLoading,
                 onCreate = { _, _, _, _, _, _, _, _ -> /* not used in edit mode */ },
                 onUpdate = { updated ->
-                    viewModel.updateRecord(updated)
+                    viewModelForEditSheet.updateRecord(updated)
                     scope.launch {
                         sheetState.hide()
                         showEditSheet = false
@@ -194,7 +299,7 @@ fun TrainingRecordDetailScreen(
         }
     }
 
-    if (showDeleteConfirm && record != null) {
+    if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Delete this session?") },
@@ -202,8 +307,7 @@ fun TrainingRecordDetailScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
-                    viewModel.deleteRecord(record)
-                    onBack()
+                    onDelete?.invoke()
                 }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }

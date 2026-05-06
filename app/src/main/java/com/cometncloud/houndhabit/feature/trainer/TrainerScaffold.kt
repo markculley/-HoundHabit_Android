@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -28,17 +29,27 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cometncloud.houndhabit.core.SupabaseClient
+import com.cometncloud.houndhabit.feature.guardian.records.TrainerRecordDetailScreen
 import com.cometncloud.houndhabit.feature.guardian.settings.SettingsScreen
+import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianDetailScreen
+import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianDetailViewModel
 import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianListScreen
 import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianListViewModel
 import com.cometncloud.houndhabit.feature.trainer.invite.InviteScreen
 import com.cometncloud.houndhabit.feature.trainer.invite.InviteViewModel
+import io.github.jan.supabase.auth.auth
 
 private object Routes {
     const val GUARDIANS = "guardians"
+    const val GUARDIAN_DETAIL = "guardians/detail"
+    const val GUARDIAN_RECORD_DETAIL = "guardians/record"
     const val PLANS = "plans"
     const val INVITE = "invite"
     const val SETTINGS = "settings"
+
+    fun guardianDetail(linkId: String) = "$GUARDIAN_DETAIL/$linkId"
+    fun guardianRecordDetail(recordId: String) = "$GUARDIAN_RECORD_DETAIL/$recordId"
 }
 
 private data class TrainerTab(val route: String, val label: String, val icon: ImageVector)
@@ -55,6 +66,10 @@ fun TrainerScaffold(onSignOut: () -> Unit) {
     val navController = rememberNavController()
     val guardianListViewModel: GuardianListViewModel = viewModel()
     val inviteViewModel: InviteViewModel = viewModel()
+    // Hoisted so the guardian-detail screen and the trainer record-detail screen
+    // share one VM instance — the record-detail entry needs the comments map
+    // and pets cache that detail loaded.
+    val guardianDetailViewModel: GuardianDetailViewModel = viewModel()
 
     Scaffold(bottomBar = { BottomBar(navController) }) { padding ->
         NavHost(
@@ -67,8 +82,56 @@ fun TrainerScaffold(onSignOut: () -> Unit) {
             composable(Routes.GUARDIANS) {
                 GuardianListScreen(
                     viewModel = guardianListViewModel,
-                    onGuardianClick = { /* Phase 8 — guardian detail screen */ },
+                    onGuardianClick = { linked ->
+                        navController.navigate(Routes.guardianDetail(linked.id))
+                    },
                 )
+            }
+            composable("${Routes.GUARDIAN_DETAIL}/{linkId}") { backStack ->
+                val linkId = backStack.arguments?.getString("linkId").orEmpty()
+                val listState by guardianListViewModel.state.collectAsStateWithLifecycle()
+                val guardian = listState.guardians.firstOrNull { it.id == linkId }
+                if (guardian == null) {
+                    // Stale nav entry — list reload will repopulate. Pop back.
+                    androidx.compose.runtime.LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    GuardianDetailScreen(
+                        guardian = guardian,
+                        viewModel = guardianDetailViewModel,
+                        onBack = { navController.popBackStack() },
+                        onRecordClick = { record ->
+                            navController.navigate(Routes.guardianRecordDetail(record.id))
+                        },
+                    )
+                }
+            }
+            composable("${Routes.GUARDIAN_RECORD_DETAIL}/{recordId}") { backStack ->
+                val recordId = backStack.arguments?.getString("recordId").orEmpty()
+                val detailState by guardianDetailViewModel.state.collectAsStateWithLifecycle()
+                val record = detailState.records.firstOrNull { it.id == recordId }
+                if (record == null) {
+                    androidx.compose.runtime.LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    val petName = guardianDetailViewModel.petName(record.petId)
+                    val comments = detailState.comments[record.id].orEmpty()
+                    val currentUserId = androidx.compose.runtime.remember {
+                        SupabaseClient.client.auth.currentUserOrNull()?.id
+                    }
+                    TrainerRecordDetailScreen(
+                        record = record,
+                        petName = petName,
+                        comments = comments,
+                        currentUserId = currentUserId,
+                        onLoadComments = { guardianDetailViewModel.loadComments(record.id) },
+                        onAddComment = { body ->
+                            guardianDetailViewModel.addComment(record.id, body)
+                        },
+                        onDeleteComment = { c ->
+                            guardianDetailViewModel.deleteComment(c)
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
             composable(Routes.PLANS) {
                 ComingSoon("Plans", "Trainer plan authoring arrives in Phase 9.")
@@ -93,8 +156,13 @@ private fun BottomBar(navController: NavHostController) {
     val currentRoute = backStack?.destination?.route
     NavigationBar {
         tabs.forEach { tab ->
+            val selected = currentRoute == tab.route ||
+                (tab.route == Routes.GUARDIANS && (
+                    currentRoute?.startsWith(Routes.GUARDIAN_DETAIL) == true ||
+                        currentRoute?.startsWith(Routes.GUARDIAN_RECORD_DETAIL) == true
+                ))
             NavigationBarItem(
-                selected = currentRoute == tab.route,
+                selected = selected,
                 onClick = {
                     navController.navigate(tab.route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
