@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cometncloud.houndhabit.core.models.Behavior
+import com.cometncloud.houndhabit.core.models.PlanAssignment
+import com.cometncloud.houndhabit.shared.components.PlanProgressBadge
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,12 +73,16 @@ fun PlanDetailScreen(
 
     var showEditPlan by remember { mutableStateOf(false) }
     var showAddBehavior by remember { mutableStateOf(false) }
+    var showAssignSheet by remember { mutableStateOf(false) }
     var showDeletePlanConfirm by remember { mutableStateOf(false) }
     var pendingBehaviorDelete by remember { mutableStateOf<Behavior?>(null) }
+    var pendingAssignmentDelete by remember { mutableStateOf<PlanAssignment?>(null) }
 
     LaunchedEffect(planId) {
         viewModel.loadBehaviors(planId)
         viewModel.loadItems(planId)
+        viewModel.loadAssignments(planId)
+        viewModel.loadLinkedGuardians()
     }
     LaunchedEffect(plan == null) {
         if (plan == null && state.plans.isNotEmpty()) onBack()
@@ -178,11 +185,65 @@ fun PlanDetailScreen(
             }
 
             item {
-                ComingSoonCard(
-                    title = "Assignments",
-                    body = "Assign this plan to a linked guardian in Phase 9c.",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "ASSIGNMENTS",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val blockReason = assignBlockReason(behaviors, state.items[planId].orEmpty())
+                    if (blockReason == null) {
+                        TextButton(onClick = { showAssignSheet = true }) {
+                            Text("Assign to Guardian…")
+                        }
+                    }
+                }
+            }
+
+            val assignments = state.assignments[planId].orEmpty()
+            val blockReason = assignBlockReason(behaviors, state.items[planId].orEmpty())
+            if (blockReason != null && assignments.isEmpty()) {
+                item {
+                    Text(
+                        blockReason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            } else if (assignments.isEmpty()) {
+                item {
+                    Text(
+                        "Not assigned to anyone yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            } else {
+                items(assignments, key = { it.id }) { a ->
+                    AssignmentRow(
+                        guardianName = viewModel.guardianName(a.guardianId),
+                        petName = viewModel.petName(a.petId),
+                        progress = viewModel.planProgress(a),
+                        onDelete = { pendingAssignmentDelete = a },
+                    )
+                    HorizontalDivider()
+                }
+                if (blockReason != null) {
+                    item {
+                        Text(
+                            blockReason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
             }
 
             item { HorizontalDivider() }
@@ -271,6 +332,86 @@ fun PlanDetailScreen(
                 TextButton(onClick = { showDeletePlanConfirm = false }) { Text("Cancel") }
             },
         )
+    }
+
+    if (showAssignSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showAssignSheet = false },
+            sheetState = sheetState,
+        ) {
+            AssignPlanSheet(
+                guardians = state.linkedGuardians,
+                existingAssignments = state.assignments[planId].orEmpty(),
+                onAssign = { guardianId, petId ->
+                    viewModel.assignPlan(planId, guardianId, petId)
+                    scope.launch { sheetState.hide(); showAssignSheet = false }
+                },
+                onCancel = { scope.launch { sheetState.hide(); showAssignSheet = false } },
+            )
+        }
+    }
+
+    pendingAssignmentDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingAssignmentDelete = null },
+            title = { Text("Remove this assignment?") },
+            text = { Text("The guardian will lose access to this plan.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteAssignment(target)
+                    pendingAssignmentDelete = null
+                }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingAssignmentDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun AssignmentRow(
+    guardianName: String,
+    petName: String,
+    progress: PlanProgress,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(guardianName, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Pet: $petName",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        PlanProgressBadge(progress = progress, modifier = Modifier.padding(end = 8.dp))
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Outlined.Delete,
+                contentDescription = "Remove assignment",
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+private fun assignBlockReason(
+    behaviors: List<Behavior>,
+    items: List<com.cometncloud.houndhabit.core.models.TrainingPlanItem>,
+): String? {
+    if (behaviors.isEmpty()) return "Add at least one behavior before assigning."
+    val empty = behaviors.filter { b -> items.none { it.behaviorId == b.id } }
+    return when (empty.size) {
+        0 -> null
+        1 -> "\"${empty[0].name}\" has no steps. Each behavior needs at least one step."
+        else -> "${empty.size} behaviors have no steps. Each behavior needs at least one step."
     }
 }
 

@@ -6,9 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.cometncloud.houndhabit.core.models.Behavior
 import com.cometncloud.houndhabit.core.models.Distance
 import com.cometncloud.houndhabit.core.models.Distraction
+import com.cometncloud.houndhabit.core.models.LinkedGuardian
+import com.cometncloud.houndhabit.core.models.Pet
+import com.cometncloud.houndhabit.core.models.PlanAssignment
 import com.cometncloud.houndhabit.core.models.TrainingDuration
 import com.cometncloud.houndhabit.core.models.TrainingPlan
 import com.cometncloud.houndhabit.core.models.TrainingPlanItem
+import com.cometncloud.houndhabit.core.services.InviteService
+import com.cometncloud.houndhabit.core.services.PetService
 import com.cometncloud.houndhabit.core.services.TrainingPlanService
 import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,18 +37,35 @@ private fun summarize(t: Throwable, fallback: String): String {
     }
 }
 
+enum class PlanProgress { ToDo, InProgress, Done }
+
+val PlanProgress.label: String
+    get() = when (this) {
+        PlanProgress.ToDo -> "To Do"
+        PlanProgress.InProgress -> "In Progress"
+        PlanProgress.Done -> "Done"
+    }
+
 data class TrainerPlanUiState(
     val plans: List<TrainingPlan> = emptyList(),
     /** Behaviors keyed by plan id. */
     val behaviors: Map<String, List<Behavior>> = emptyMap(),
     /** Items keyed by plan id (a flat list across that plan's behaviors). */
     val items: Map<String, List<TrainingPlanItem>> = emptyMap(),
+    /** Assignments keyed by plan id. */
+    val assignments: Map<String, List<PlanAssignment>> = emptyMap(),
+    /** Trainer's currently linked guardians, used by the assign sheet. */
+    val linkedGuardians: List<LinkedGuardian> = emptyList(),
+    /** Pet cache keyed by pet id; populated lazily as assignments load. */
+    val pets: Map<String, Pet> = emptyMap(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
 )
 
 class TrainerPlanViewModel(
     private val service: TrainingPlanService = TrainingPlanService(),
+    private val inviteService: InviteService = InviteService(),
+    private val petService: PetService = PetService(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(TrainerPlanUiState())
@@ -287,6 +309,93 @@ class TrainerPlanViewModel(
             }
         }
     }
+
+    // ---- Assignments -----------------------------------------------------
+
+    fun loadAssignments(planId: String) {
+        viewModelScope.launch {
+            try {
+                val assignments = service.fetchAssignments(planId)
+                _state.update { it.copy(assignments = it.assignments + (planId to assignments)) }
+                // Load any pets we don't yet have cached for the assigned guardians.
+                val knownPetIds = _state.value.pets.keys
+                val missingPetIds = assignments.mapNotNull { it.petId }.filterNot { it in knownPetIds }
+                if (missingPetIds.isNotEmpty()) {
+                    val guardianIds = assignments.map { it.guardianId }.distinct()
+                    val fetchedPets = guardianIds.flatMap {
+                        runCatching { petService.fetchPets(it) }.getOrDefault(emptyList())
+                    }
+                    if (fetchedPets.isNotEmpty()) {
+                        _state.update { s ->
+                            s.copy(pets = s.pets + fetchedPets.associateBy { it.id })
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = summarize(t, "Could not load assignments.")) }
+            }
+        }
+    }
+
+    fun loadLinkedGuardians() {
+        viewModelScope.launch {
+            try {
+                _state.update { it.copy(linkedGuardians = inviteService.fetchLinkedGuardians()) }
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = summarize(t, "Could not load guardians.")) }
+            }
+        }
+    }
+
+    fun assignPlan(planId: String, guardianId: String, petId: String?, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                val assignment = service.assignPlan(planId, guardianId, petId)
+                _state.update { s ->
+                    val current = s.assignments[planId].orEmpty()
+                    s.copy(assignments = s.assignments + (planId to listOf(assignment) + current))
+                }
+                onDone()
+            } catch (t: Throwable) {
+                val msg = t.message.orEmpty()
+                val friendly = if (msg.contains("duplicate", true) || msg.contains("unique", true)) {
+                    "This guardian is already assigned to this plan."
+                } else {
+                    summarize(t, "Could not assign plan.")
+                }
+                _state.update { it.copy(errorMessage = friendly) }
+            }
+        }
+    }
+
+    fun deleteAssignment(assignment: PlanAssignment) {
+        viewModelScope.launch {
+            try {
+                service.deleteAssignment(assignment.id)
+                _state.update { s ->
+                    val current = s.assignments[assignment.planId].orEmpty()
+                        .filterNot { it.id == assignment.id }
+                    s.copy(assignments = s.assignments + (assignment.planId to current))
+                }
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = summarize(t, "Could not remove assignment.")) }
+            }
+        }
+    }
+
+    fun planProgress(assignment: PlanAssignment): PlanProgress {
+        val currentId = assignment.currentItemId ?: return PlanProgress.ToDo
+        val sorted = _state.value.items[assignment.planId].orEmpty().sortedBy { it.sortOrder }
+        val last = sorted.lastOrNull() ?: return PlanProgress.InProgress
+        return if (currentId == last.id) PlanProgress.Done else PlanProgress.InProgress
+    }
+
+    fun guardianName(guardianId: String): String =
+        _state.value.linkedGuardians.firstOrNull { it.guardianId == guardianId }?.profile?.fullName
+            ?: "Guardian"
+
+    fun petName(petId: String?): String =
+        if (petId == null) "Any pet" else _state.value.pets[petId]?.name ?: "Pet"
 
     // ---- Helpers ---------------------------------------------------------
 

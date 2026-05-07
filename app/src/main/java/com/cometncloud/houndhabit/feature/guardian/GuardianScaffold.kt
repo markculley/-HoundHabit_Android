@@ -31,6 +31,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cometncloud.houndhabit.feature.guardian.dashboard.DashboardScreen
+import com.cometncloud.houndhabit.feature.guardian.plans.GuardianPlanDetailScreen
+import com.cometncloud.houndhabit.feature.guardian.plans.GuardianPlanListScreen
+import com.cometncloud.houndhabit.feature.guardian.plans.GuardianPlanViewModel
 import com.cometncloud.houndhabit.feature.guardian.settings.EnterInviteCodeScreen
 import com.cometncloud.houndhabit.feature.guardian.settings.SettingsScreen
 import com.cometncloud.houndhabit.feature.guardian.pets.PetDetailScreen
@@ -51,6 +54,7 @@ private object Routes {
     const val PET_SESSIONS = "pet/sessions"
     const val SESSION_DETAIL = "sessions/detail"
     const val PLANS = "plans"
+    const val PLAN_DETAIL = "plans/detail"
     const val RESOURCES = "resources"
     const val RESOURCE_DETAIL = "resources/detail"
     const val SETTINGS = "settings"
@@ -60,6 +64,7 @@ private object Routes {
     fun petSessions(petId: String, petName: String) =
         "$PET_SESSIONS/$petId?name=${java.net.URLEncoder.encode(petName, "UTF-8")}"
     fun sessionDetail(recordId: String) = "$SESSION_DETAIL/$recordId"
+    fun planDetail(assignedPlanId: String) = "$PLAN_DETAIL/$assignedPlanId"
     fun resourceDetail(resourceId: String) = "$RESOURCE_DETAIL/$resourceId"
 }
 
@@ -84,6 +89,7 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
     val petViewModel: PetViewModel = viewModel()
     val recordViewModel: TrainingRecordViewModel = viewModel()
     val resourceViewModel: ResourceViewModel = viewModel()
+    val planViewModel: GuardianPlanViewModel = viewModel()
 
     Scaffold(
         bottomBar = { BottomBar(navController) },
@@ -144,7 +150,20 @@ fun GuardianScaffold(onSignOut: () -> Unit) {
                 )
             }
 
-            composable(Routes.PLANS) { ComingSoon("Plans", "Training plans arrive in Phase 9.") }
+            composable(Routes.PLANS) {
+                GuardianPlanListScreen(
+                    viewModel = planViewModel,
+                    onPlanClick = { ap -> navController.navigate(Routes.planDetail(ap.id)) },
+                )
+            }
+            composable("${Routes.PLAN_DETAIL}/{assignedPlanId}") { backStack ->
+                val id = backStack.arguments?.getString("assignedPlanId").orEmpty()
+                GuardianPlanDetailScreen(
+                    assignedPlanId = id,
+                    viewModel = planViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
             composable(Routes.RESOURCES) {
                 ResourceListScreen(
                     viewModel = resourceViewModel,
@@ -193,6 +212,8 @@ private fun BottomBar(navController: NavHostController) {
                 )) ||
                 (tab.route == Routes.RESOURCES &&
                     currentRoute?.startsWith(Routes.RESOURCE_DETAIL) == true) ||
+                (tab.route == Routes.PLANS &&
+                    currentRoute?.startsWith(Routes.PLAN_DETAIL) == true) ||
                 (tab.route == Routes.SETTINGS &&
                     currentRoute == Routes.ENTER_INVITE_CODE)
             NavigationBarItem(

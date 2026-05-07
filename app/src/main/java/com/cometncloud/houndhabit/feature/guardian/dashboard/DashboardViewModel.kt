@@ -10,6 +10,7 @@ import com.cometncloud.houndhabit.core.models.TrainingRecord
 import com.cometncloud.houndhabit.core.services.BadgeService
 import com.cometncloud.houndhabit.core.services.InviteService
 import com.cometncloud.houndhabit.core.services.PetService
+import com.cometncloud.houndhabit.core.services.TrainingPlanService
 import com.cometncloud.houndhabit.core.services.TrainingRecordService
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.async
@@ -33,6 +34,7 @@ data class DashboardUiState(
     val badges: List<Badge> = emptyList(),
     val linkedTrainer: LinkedTrainer? = null,
     val currentStreak: Int = 0,
+    val assignedPlanCount: Int = 0,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
 ) {
@@ -45,6 +47,7 @@ class DashboardViewModel(
     private val recordService: TrainingRecordService = TrainingRecordService(),
     private val badgeService: BadgeService = BadgeService(),
     private val inviteService: InviteService = InviteService(),
+    private val planService: TrainingPlanService = TrainingPlanService(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())
@@ -64,7 +67,8 @@ class DashboardViewModel(
                     val r = async { recordService.fetchRecords(userId) }
                     val b = async { runCatching { badgeService.fetchBadges(userId) }.getOrDefault(emptyList()) }
                     val t = async { runCatching { inviteService.fetchLinkedTrainer() }.getOrNull() }
-                    DashboardLoadResult(p.await(), r.await(), b.await(), t.await())
+                    val plans = async { runCatching { planService.fetchAssignedPlans() }.getOrDefault(emptyList()) }
+                    DashboardLoadResult(p.await(), r.await(), b.await(), t.await(), plans.await().size)
                 }
                 _state.update {
                     it.copy(
@@ -72,6 +76,7 @@ class DashboardViewModel(
                         records = result.records,
                         badges = result.badges,
                         linkedTrainer = result.linkedTrainer,
+                        assignedPlanCount = result.assignedPlanCount,
                         currentStreak = computeStreak(result.records.map { rec -> rec.recordedAt }),
                     )
                 }
@@ -89,6 +94,7 @@ private data class DashboardLoadResult(
     val records: List<TrainingRecord>,
     val badges: List<Badge>,
     val linkedTrainer: LinkedTrainer?,
+    val assignedPlanCount: Int,
 )
 
 /**

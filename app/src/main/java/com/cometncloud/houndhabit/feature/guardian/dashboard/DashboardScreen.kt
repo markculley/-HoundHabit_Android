@@ -87,13 +87,20 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
                 onSeeAll = { showAchievements = true },
             )
 
-            // Plans section — fills in once Phase 9 wires planService.
             CardSection(label = "Training Plans") {
-                Text(
-                    "No plans assigned yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                val n = state.assignedPlanCount
+                if (n == 0) {
+                    Text(
+                        "No plans assigned yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        if (n == 1) "1 plan assigned" else "$n plans assigned",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
             }
 
             CardSection(label = "Your Trainer") {

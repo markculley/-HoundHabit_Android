@@ -45,6 +45,7 @@ import com.cometncloud.houndhabit.core.models.Comment
 import com.cometncloud.houndhabit.core.models.TrainingRecord
 import com.cometncloud.houndhabit.core.models.label
 import com.cometncloud.houndhabit.core.services.CommentService
+import com.cometncloud.houndhabit.core.services.TrainingPlanService
 import com.cometncloud.houndhabit.shared.components.StatusBadge
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.launch
@@ -79,16 +80,25 @@ fun TrainingRecordDetailScreen(
     // closure-injection pattern below leaves `onAddComment` null, which keeps
     // the input row hidden — guardian view is read-only for the thread.
     val commentService = remember { CommentService() }
+    val planService = remember { TrainingPlanService() }
     var comments by remember(record.id) { mutableStateOf<List<Comment>>(emptyList()) }
+    var behaviorName by remember(record.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(record.id) {
         runCatching { commentService.fetchComments(record.id) }
             .getOrNull()
             ?.let { comments = it }
     }
+    LaunchedEffect(record.planItemId) {
+        val pid = record.planItemId
+        behaviorName = if (pid != null) {
+            runCatching { planService.fetchBehaviorName(pid) }.getOrNull()
+        } else null
+    }
 
     RecordDetailContent(
         record = record,
         petName = petName,
+        behaviorName = behaviorName,
         isLoading = state.isLoading,
         errorMessage = state.errorMessage,
         onClearError = viewModel::clearError,
@@ -123,9 +133,19 @@ fun TrainerRecordDetailScreen(
 ) {
     LaunchedEffect(record.id) { onLoadComments() }
 
+    val planService = remember { TrainingPlanService() }
+    var behaviorName by remember(record.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(record.planItemId) {
+        val pid = record.planItemId
+        behaviorName = if (pid != null) {
+            runCatching { planService.fetchBehaviorName(pid) }.getOrNull()
+        } else null
+    }
+
     RecordDetailContent(
         record = record,
         petName = petName,
+        behaviorName = behaviorName,
         isLoading = false,
         errorMessage = null,
         onClearError = {},
@@ -148,6 +168,7 @@ fun TrainerRecordDetailScreen(
 private fun RecordDetailContent(
     record: TrainingRecord,
     petName: String,
+    behaviorName: String?,
     isLoading: Boolean,
     errorMessage: String?,
     onClearError: () -> Unit,
@@ -220,6 +241,9 @@ private fun RecordDetailContent(
             }
 
             DetailSection("Three D's") {
+                if (behaviorName != null) {
+                    LabeledValue("Behavior", behaviorName)
+                }
                 LabeledValue("Distance", record.distance.label)
                 LabeledValue("Distraction", record.distraction.label)
                 LabeledValue("Duration", record.duration.label)
