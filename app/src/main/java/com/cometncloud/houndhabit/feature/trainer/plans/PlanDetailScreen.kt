@@ -1,17 +1,26 @@
 package com.cometncloud.houndhabit.feature.trainer.plans
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.background
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -37,7 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.cometncloud.houndhabit.core.models.TrainingPlan
+import com.cometncloud.houndhabit.core.models.Behavior
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,15 +55,28 @@ fun PlanDetailScreen(
     planId: String,
     viewModel: TrainerPlanViewModel,
     onBack: () -> Unit,
+    onBehaviorClick: (Behavior) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val plan = state.plans.firstOrNull { it.id == planId }
+    val behaviors = state.behaviors[planId].orEmpty()
+    // Read items at the outer scope so the LazyColumn re-issues rows when
+    // items load (the inner lambda doesn't track viewModel.stepCount()).
+    val itemsByBehavior: Map<String?, Int> = state.items[planId].orEmpty()
+        .groupingBy { it.behaviorId }
+        .eachCount()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    var showEdit by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showEditPlan by remember { mutableStateOf(false) }
+    var showAddBehavior by remember { mutableStateOf(false) }
+    var showDeletePlanConfirm by remember { mutableStateOf(false) }
+    var pendingBehaviorDelete by remember { mutableStateOf<Behavior?>(null) }
 
+    LaunchedEffect(planId) {
+        viewModel.loadBehaviors(planId)
+        viewModel.loadItems(planId)
+    }
     LaunchedEffect(plan == null) {
         if (plan == null && state.plans.isNotEmpty()) onBack()
     }
@@ -78,91 +100,167 @@ fun PlanDetailScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showEdit = true }) { Text("Edit") }
+                    TextButton(onClick = { showEditPlan = true }) { Text("Edit") }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            DetailSection("Description") {
-                val desc = plan.description
-                if (desc.isNullOrBlank()) {
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Text(
-                        "No description.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "DESCRIPTION",
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    Text(desc, style = MaterialTheme.typography.bodyLarge)
+                    val desc = plan.description
+                    if (desc.isNullOrBlank()) {
+                        Text(
+                            "No description.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(desc, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+                HorizontalDivider()
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "BEHAVIORS",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { showAddBehavior = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.size(4.dp))
+                        Text("Add Behavior")
+                    }
                 }
             }
 
-            HorizontalDivider()
+            if (behaviors.isEmpty()) {
+                item {
+                    Text(
+                        "No behaviors yet. Tap Add Behavior to begin.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            } else {
+                itemsIndexed(behaviors, key = { _, b -> b.id }) { idx, behavior ->
+                    BehaviorRow(
+                        behavior = behavior,
+                        stepCount = itemsByBehavior[behavior.id] ?: 0,
+                        isFirst = idx == 0,
+                        isLast = idx == behaviors.lastIndex,
+                        onClick = { onBehaviorClick(behavior) },
+                        onMoveUp = { viewModel.moveBehavior(planId, idx, idx - 1) },
+                        onMoveDown = { viewModel.moveBehavior(planId, idx, idx + 1) },
+                        onDelete = { pendingBehaviorDelete = behavior },
+                    )
+                    HorizontalDivider()
+                }
+            }
 
-            ComingSoonCard(
-                title = "Behaviors",
-                body = "Add behaviors and steps to this plan in Phase 9b.",
-            )
+            item {
+                ComingSoonCard(
+                    title = "Assignments",
+                    body = "Assign this plan to a linked guardian in Phase 9c.",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+                )
+            }
 
-            ComingSoonCard(
-                title = "Assignments",
-                body = "Assign this plan to a linked guardian in Phase 9c.",
-            )
+            item { HorizontalDivider() }
 
-            HorizontalDivider()
-
-            TextButton(
-                onClick = { showDeleteConfirm = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Delete Plan", color = MaterialTheme.colorScheme.error)
+            item {
+                TextButton(
+                    onClick = { showDeletePlanConfirm = true },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Text("Delete Plan", color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
 
-    if (showEdit) {
+    if (showEditPlan) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { showEdit = false },
+            onDismissRequest = { showEditPlan = false },
             sheetState = sheetState,
         ) {
             PlanFormScreen(
                 editing = plan,
                 isSaving = state.isLoading,
-                onCreate = { _, _ -> /* not used in edit mode */ },
+                onCreate = { _, _ -> /* unused */ },
                 onUpdate = { updated ->
                     viewModel.updatePlan(updated)
-                    scope.launch {
-                        sheetState.hide()
-                        showEdit = false
-                    }
+                    scope.launch { sheetState.hide(); showEditPlan = false }
                 },
-                onCancel = {
-                    scope.launch {
-                        sheetState.hide()
-                        showEdit = false
-                    }
-                },
+                onCancel = { scope.launch { sheetState.hide(); showEditPlan = false } },
             )
         }
     }
 
-    if (showDeleteConfirm) {
+    if (showAddBehavior) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showAddBehavior = false },
+            sheetState = sheetState,
+        ) {
+            BehaviorFormScreen(
+                editing = null,
+                onSubmit = { name ->
+                    viewModel.addBehavior(planId, name)
+                    scope.launch { sheetState.hide(); showAddBehavior = false }
+                },
+                onCancel = { scope.launch { sheetState.hide(); showAddBehavior = false } },
+            )
+        }
+    }
+
+    pendingBehaviorDelete?.let { target ->
         AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
+            onDismissRequest = { pendingBehaviorDelete = null },
+            title = { Text("Delete this behavior?") },
+            text = { Text("This will also remove all of its steps. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBehavior(target)
+                    pendingBehaviorDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBehaviorDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showDeletePlanConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeletePlanConfirm = false },
             title = { Text("Delete this plan?") },
             text = { Text("This will also remove any behaviors, steps, and assignments. This cannot be undone.") },
             confirmButton = {
                 TextButton(onClick = {
-                    showDeleteConfirm = false
+                    showDeletePlanConfirm = false
                     viewModel.deletePlan(plan)
                     onBack()
                 }) {
@@ -170,28 +268,58 @@ fun PlanDetailScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showDeletePlanConfirm = false }) { Text("Cancel") }
             },
         )
     }
 }
 
 @Composable
-private fun DetailSection(label: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        content()
+private fun BehaviorRow(
+    behavior: Behavior,
+    stepCount: Int,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onClick: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(behavior.name, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (stepCount == 1) "1 step" else "$stepCount steps",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onMoveUp, enabled = !isFirst) {
+            Icon(Icons.Filled.ArrowUpward, contentDescription = "Move up")
+        }
+        IconButton(onClick = onMoveDown, enabled = !isLast) {
+            Icon(Icons.Filled.ArrowDownward, contentDescription = "Move down")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Outlined.Delete,
+                contentDescription = "Delete behavior",
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
 @Composable
-private fun ComingSoonCard(title: String, body: String) {
+private fun ComingSoonCard(title: String, body: String, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),

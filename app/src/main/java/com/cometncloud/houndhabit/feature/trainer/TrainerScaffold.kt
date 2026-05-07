@@ -38,6 +38,7 @@ import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianListScreen
 import com.cometncloud.houndhabit.feature.trainer.guardians.GuardianListViewModel
 import com.cometncloud.houndhabit.feature.trainer.invite.InviteScreen
 import com.cometncloud.houndhabit.feature.trainer.invite.InviteViewModel
+import com.cometncloud.houndhabit.feature.trainer.plans.BehaviorDetailScreen
 import com.cometncloud.houndhabit.feature.trainer.plans.PlanDetailScreen
 import com.cometncloud.houndhabit.feature.trainer.plans.PlanListScreen
 import com.cometncloud.houndhabit.feature.trainer.plans.TrainerPlanViewModel
@@ -49,12 +50,15 @@ private object Routes {
     const val GUARDIAN_RECORD_DETAIL = "guardians/record"
     const val PLANS = "plans"
     const val PLAN_DETAIL = "plans/detail"
+    const val BEHAVIOR_DETAIL = "plans/behavior"
     const val INVITE = "invite"
     const val SETTINGS = "settings"
 
     fun guardianDetail(linkId: String) = "$GUARDIAN_DETAIL/$linkId"
     fun guardianRecordDetail(recordId: String) = "$GUARDIAN_RECORD_DETAIL/$recordId"
     fun planDetail(planId: String) = "$PLAN_DETAIL/$planId"
+    fun behaviorDetail(planId: String, behaviorId: String) =
+        "$BEHAVIOR_DETAIL/$planId/$behaviorId"
 }
 
 private data class TrainerTab(val route: String, val label: String, val icon: ImageVector)
@@ -152,6 +156,19 @@ fun TrainerScaffold(onSignOut: () -> Unit) {
                     planId = planId,
                     viewModel = trainerPlanViewModel,
                     onBack = { navController.popBackStack() },
+                    onBehaviorClick = { behavior ->
+                        navController.navigate(Routes.behaviorDetail(planId, behavior.id))
+                    },
+                )
+            }
+            composable("${Routes.BEHAVIOR_DETAIL}/{planId}/{behaviorId}") { backStack ->
+                val planId = backStack.arguments?.getString("planId").orEmpty()
+                val behaviorId = backStack.arguments?.getString("behaviorId").orEmpty()
+                BehaviorDetailScreen(
+                    planId = planId,
+                    behaviorId = behaviorId,
+                    viewModel = trainerPlanViewModel,
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(Routes.INVITE) {
@@ -179,8 +196,10 @@ private fun BottomBar(navController: NavHostController) {
                     currentRoute?.startsWith(Routes.GUARDIAN_DETAIL) == true ||
                         currentRoute?.startsWith(Routes.GUARDIAN_RECORD_DETAIL) == true
                 )) ||
-                (tab.route == Routes.PLANS &&
-                    currentRoute?.startsWith(Routes.PLAN_DETAIL) == true)
+                (tab.route == Routes.PLANS && (
+                    currentRoute?.startsWith(Routes.PLAN_DETAIL) == true ||
+                        currentRoute?.startsWith(Routes.BEHAVIOR_DETAIL) == true
+                ))
             NavigationBarItem(
                 selected = selected,
                 onClick = {
