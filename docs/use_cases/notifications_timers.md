@@ -324,3 +324,48 @@ Tests target the extracted static helpers `TimerViewModel.formatTime(_:)` and `T
 7. **Reset mid-count**: Start timer → reset → returns to selected duration, state idle.
 8. **Form dismissed mid-count**: Start timer → tap Cancel → timer stops (no memory leak).
 9. **Save with haptic**: Fill form → tap Log → light haptic fires on save.
+
+---
+
+## Android Implementation Notes
+
+The Kotlin port preserves the same UX and state machine, but a few primitives differ from iOS:
+
+| Concern | iOS | Android |
+|---|---|---|
+| Daily scheduling | `UNCalendarNotificationTrigger` (repeats=true) | `WorkManager` `PeriodicWorkRequest` (24h interval) with `enqueueUniquePeriodicWork(UPDATE)` keyed on `"daily_training_reminder"`. Fire time is approximate (WorkManager batches), but that matches iOS calendar triggers in practice. |
+| Reboot persistence | OS-managed | WorkManager-managed; no `BOOT_COMPLETED` receiver needed. |
+| Persistence store | `UserDefaults` | `SharedPreferences("daily_reminder")` keys `enabled` / `hour` / `minute`. |
+| Permission model | `requestAuthorization` (push) | `POST_NOTIFICATIONS` (Android 13+) via `ActivityResultContracts.RequestPermission`. No prompt needed on < 13. |
+| Channel | n/a | `daily_reminders` (`IMPORTANCE_DEFAULT`) registered in `MainActivity.onCreate`. Required on Android 8+. |
+| Reschedule-on-launch hook | `AppRouter.resolveRoute` | `LaunchedEffect(Unit)` inside `GuardianScaffold` calls `DailyReminderScheduler.rescheduleIfNeeded(context)`. |
+| Haptics | `UIImpactFeedbackGenerator` | `VibratorManager` (API 31+) / `Vibrator` (API 26–30). `light/medium/heavy` are `createOneShot(10/25/50ms)`; `timerComplete` is a 50/150/30/100/30 waveform. Each call also logs at tag `"Haptic"` so emulators (no vibrator) can be verified via logcat. |
+| Timer engine | `Timer.scheduledTimer`, 0.1s | `kotlinx.coroutines` loop in `viewModelScope`, `delay(100)`; cancelled on pause/reset/clear. |
+| Timer UI | `DisclosureGroup` + ring | `AnimatedVisibility` expand under an `OutlinedButton` header; ring is a `Canvas` `drawArc`. |
+| Form host | `TrainingRecordFormView` between Three D's and Notes | `TrainingRecordFormScreen` between Notes and Share toggle (`TrainingTimerSection()`). |
+
+### Files (Android)
+
+- `app/src/main/java/com/cometncloud/houndhabit/shared/util/HapticManager.kt`
+- `app/src/main/java/com/cometncloud/houndhabit/shared/notifications/NotificationManager.kt`
+- `app/src/main/java/com/cometncloud/houndhabit/shared/notifications/DailyReminderPrefs.kt`
+- `app/src/main/java/com/cometncloud/houndhabit/shared/notifications/DailyReminderScheduler.kt`
+- `app/src/main/java/com/cometncloud/houndhabit/shared/notifications/DailyReminderWorker.kt`
+- `app/src/main/java/com/cometncloud/houndhabit/shared/components/TimerView.kt`
+- Wiring: `MainActivity.kt` (init + channel), `GuardianScaffold.kt` (reschedule hook), `SettingsScreen.kt` (toggle + time picker), `TrainingRecordFormScreen.kt` (timer drop-in).
+
+### Manifest
+
+```xml
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.VIBRATE" />
+```
+
+No `SCHEDULE_EXACT_ALARM` / `RECEIVE_BOOT_COMPLETED` — WorkManager handles both.
+
+### Logcat tags (dev)
+
+- `Haptic` — every haptic call
+- `Notify` — `NotificationManager.showDailyReminder` invocations
+- `ReminderScheduler` — `schedule` / `cancel` / `rescheduleIfNeeded`
+- `DailyReminderWorker` — each periodic fire

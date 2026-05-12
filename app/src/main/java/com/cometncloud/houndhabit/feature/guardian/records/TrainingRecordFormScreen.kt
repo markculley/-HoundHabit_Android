@@ -48,6 +48,7 @@ import com.cometncloud.houndhabit.core.models.Distraction
 import com.cometncloud.houndhabit.core.models.Pet
 import com.cometncloud.houndhabit.core.models.TrainingDuration
 import com.cometncloud.houndhabit.core.models.TrainingRecord
+import com.cometncloud.houndhabit.shared.components.TrainingTimerSection
 import com.cometncloud.houndhabit.core.models.TrainingStatus
 import com.cometncloud.houndhabit.core.models.label
 import com.cometncloud.houndhabit.shared.components.StatusBadge
@@ -234,6 +235,8 @@ fun TrainingRecordFormScreen(
                 .fillMaxWidth()
                 .heightIn(min = 96.dp),
         )
+
+        TrainingTimerSection()
 
         // Share toggle
         Row(

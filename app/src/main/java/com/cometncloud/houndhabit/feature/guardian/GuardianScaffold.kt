@@ -131,6 +131,14 @@ private val tabs = listOf(
 @Composable
 fun GuardianScaffold(onSignOut: () -> Unit) {
     val navController = rememberNavController()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Re-arm any daily reminder the user enabled in a previous session.
+    // WorkManager's periodic job survives reboots, so this is only a no-op
+    // safety net for fresh installs / OS-level work cancellation.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        com.cometncloud.houndhabit.shared.notifications.DailyReminderScheduler
+            .rescheduleIfNeeded(context)
+    }
     // Scaffold-scoped VMs so list + detail destinations across both tab
     // entries share state (e.g., a plan-detail viewed via Pets and via Plans
     // sees the same items map).
