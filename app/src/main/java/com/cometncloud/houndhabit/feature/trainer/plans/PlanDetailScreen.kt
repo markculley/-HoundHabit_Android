@@ -59,6 +59,10 @@ fun PlanDetailScreen(
     viewModel: TrainerPlanViewModel,
     onBack: () -> Unit,
     onBehaviorClick: (Behavior) -> Unit,
+    /** False hides the Assignments section entirely (used by own-plan view). */
+    showAssignments: Boolean = true,
+    /** Optional content rendered above DESCRIPTION (e.g. pet picker for own plans). */
+    leadingContent: (@Composable () -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val plan = state.plans.firstOrNull { it.id == planId }
@@ -81,8 +85,10 @@ fun PlanDetailScreen(
     LaunchedEffect(planId) {
         viewModel.loadBehaviors(planId)
         viewModel.loadItems(planId)
-        viewModel.loadAssignments(planId)
-        viewModel.loadLinkedGuardians()
+        if (showAssignments) {
+            viewModel.loadAssignments(planId)
+            viewModel.loadLinkedGuardians()
+        }
     }
     LaunchedEffect(plan == null) {
         if (plan == null && state.plans.isNotEmpty()) onBack()
@@ -116,6 +122,9 @@ fun PlanDetailScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
+            if (leadingContent != null) {
+                item { leadingContent() }
+            }
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(24.dp),
@@ -184,57 +193,30 @@ fun PlanDetailScreen(
                 }
             }
 
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "ASSIGNMENTS",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    val blockReason = assignBlockReason(behaviors, state.items[planId].orEmpty())
-                    if (blockReason == null) {
-                        TextButton(onClick = { showAssignSheet = true }) {
-                            Text("Assign to Guardian…")
+            if (showAssignments) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "ASSIGNMENTS",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val blockReason = assignBlockReason(behaviors, state.items[planId].orEmpty())
+                        if (blockReason == null) {
+                            TextButton(onClick = { showAssignSheet = true }) {
+                                Text("Assign to Guardian…")
+                            }
                         }
                     }
                 }
-            }
 
-            val assignments = state.assignments[planId].orEmpty()
-            val blockReason = assignBlockReason(behaviors, state.items[planId].orEmpty())
-            if (blockReason != null && assignments.isEmpty()) {
-                item {
-                    Text(
-                        blockReason,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-            } else if (assignments.isEmpty()) {
-                item {
-                    Text(
-                        "Not assigned to anyone yet.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-            } else {
-                items(assignments, key = { it.id }) { a ->
-                    AssignmentRow(
-                        guardianName = viewModel.guardianName(a.guardianId),
-                        petName = viewModel.petName(a.petId),
-                        progress = viewModel.planProgress(a),
-                        onDelete = { pendingAssignmentDelete = a },
-                    )
-                    HorizontalDivider()
-                }
-                if (blockReason != null) {
+                val assignments = state.assignments[planId].orEmpty()
+                val blockReason = assignBlockReason(behaviors, state.items[planId].orEmpty())
+                if (blockReason != null && assignments.isEmpty()) {
                     item {
                         Text(
                             blockReason,
@@ -242,6 +224,35 @@ fun PlanDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
+                    }
+                } else if (assignments.isEmpty()) {
+                    item {
+                        Text(
+                            "Not assigned to anyone yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                } else {
+                    items(assignments, key = { it.id }) { a ->
+                        AssignmentRow(
+                            guardianName = viewModel.guardianName(a.guardianId),
+                            petName = viewModel.petName(a.petId),
+                            progress = viewModel.planProgress(a),
+                            onDelete = { pendingAssignmentDelete = a },
+                        )
+                        HorizontalDivider()
+                    }
+                    if (blockReason != null) {
+                        item {
+                            Text(
+                                blockReason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -268,7 +279,7 @@ fun PlanDetailScreen(
             PlanFormScreen(
                 editing = plan,
                 isSaving = state.isLoading,
-                onCreate = { _, _ -> /* unused */ },
+                onCreate = { _, _, _ -> /* unused in edit mode */ },
                 onUpdate = { updated ->
                     viewModel.updatePlan(updated)
                     scope.launch { sheetState.hide(); showEditPlan = false }

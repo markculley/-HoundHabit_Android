@@ -296,6 +296,44 @@ class TrainingPlanService {
     }
 
     /**
+     * Self-assignment: a guardian creates a plan and immediately assigns it to
+     * themselves so it appears in their plan list. `trainer_id = guardian_id`
+     * and `is_shared = false` since there's no real trainer to share with.
+     * Requires a dedicated RLS policy ("Guardian self-assigns own plans").
+     */
+    suspend fun selfAssignPlan(planId: String, petId: String?): PlanAssignment {
+        val userId = supabase.auth.currentUserOrNull()?.id
+            ?: throw PlanException.NotAuthenticated
+        val payload = AssignmentInsert(
+            planId = planId,
+            trainerId = userId,
+            guardianId = userId,
+            petId = petId,
+            isShared = false,
+        )
+        return supabase.postgrest
+            .from("plan_assignments")
+            .insert(payload) { select() }
+            .decodeSingle()
+    }
+
+    suspend fun updateAssignmentSharing(assignmentId: String, isShared: Boolean) {
+        supabase.postgrest
+            .from("plan_assignments")
+            .update(SharingUpdate(isShared = isShared)) {
+                filter { eq("id", assignmentId) }
+            }
+    }
+
+    suspend fun updateAssignmentPet(assignmentId: String, petId: String?) {
+        supabase.postgrest
+            .from("plan_assignments")
+            .update(AssignmentPetUpdate(petId = petId)) {
+                filter { eq("id", assignmentId) }
+            }
+    }
+
+    /**
      * Two-fetch helper for record-detail: item → behavior → name.
      * Returns null for standalone sessions or items with no behavior.
      */
@@ -399,4 +437,14 @@ private data class AssignmentInsert(
 @Serializable
 private data class CurrentItemUpdate(
     @SerialName("current_item_id") val currentItemId: String,
+)
+
+@Serializable
+private data class SharingUpdate(
+    @SerialName("is_shared") val isShared: Boolean,
+)
+
+@Serializable
+private data class AssignmentPetUpdate(
+    @SerialName("pet_id") val petId: String?,
 )

@@ -112,6 +112,18 @@ class TrainerPlanViewModel(
         }
     }
 
+    /**
+     * Inject a plan into the VM's state without a network call. Used by
+     * `OwnedPlanDetailScreen` so the guardian-owned-plan host shares the
+     * same screen as the trainer detail.
+     */
+    fun adoptPlan(plan: TrainingPlan) {
+        _state.update { s ->
+            if (s.plans.any { it.id == plan.id }) s
+            else s.copy(plans = listOf(plan) + s.plans)
+        }
+    }
+
     fun deletePlan(plan: TrainingPlan) {
         viewModelScope.launch {
             try {

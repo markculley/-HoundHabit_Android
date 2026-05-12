@@ -28,6 +28,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -114,11 +115,25 @@ fun GuardianPlanDetailScreen(
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     val desc = ap.plan.description
                     if (!desc.isNullOrBlank()) {
                         Text(desc, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    val isTrainerAssigned = ap.assignment.trainerId != ap.assignment.guardianId
+                    if (isTrainerAssigned) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Share sessions with trainer",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Switch(
+                                checked = ap.assignment.isShared,
+                                onCheckedChange = { viewModel.updateSharing(ap, it) },
+                            )
+                        }
                     }
                 }
                 HorizontalDivider()

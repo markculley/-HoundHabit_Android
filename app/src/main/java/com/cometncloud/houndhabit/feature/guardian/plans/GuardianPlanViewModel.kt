@@ -3,11 +3,14 @@ package com.cometncloud.houndhabit.feature.guardian.plans
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cometncloud.houndhabit.core.SupabaseClient
 import com.cometncloud.houndhabit.core.models.Behavior
+import com.cometncloud.houndhabit.core.models.TrainingPlan
 import com.cometncloud.houndhabit.core.models.TrainingPlanItem
 import com.cometncloud.houndhabit.core.services.AssignedPlan
 import com.cometncloud.houndhabit.core.services.TrainingPlanService
 import com.cometncloud.houndhabit.feature.trainer.plans.PlanProgress
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -45,6 +48,11 @@ class GuardianPlanViewModel(
 
     fun clearError() = _state.update { it.copy(errorMessage = null) }
     fun clearAdvancementMessage() = _state.update { it.copy(lastAdvancementMessage = null) }
+
+    val currentUserId: String? get() = SupabaseClient.client.auth.currentUserOrNull()?.id
+
+    fun isOwnPlan(ap: AssignedPlan): Boolean =
+        currentUserId?.let { ap.plan.trainerId == it } == true
 
     fun load() {
         viewModelScope.launch {
@@ -148,6 +156,90 @@ class GuardianPlanViewModel(
                 }
             } catch (t: Throwable) {
                 _state.update { it.copy(errorMessage = summarize(t, "Could not advance step.")) }
+            }
+        }
+    }
+
+    /**
+     * After [TrainingPlanService.createPlan] persists the plan, register a
+     * self-assignment so it appears in the guardian's plan list. Also seeds
+     * empty items/behaviors so the detail screen doesn't load-spin forever.
+     */
+    fun adoptCreatedPlan(plan: TrainingPlan, petId: String?) {
+        viewModelScope.launch {
+            try {
+                val assignment = service.selfAssignPlan(plan.id, petId)
+                _state.update { s ->
+                    s.copy(
+                        assignedPlans = listOf(AssignedPlan(assignment, plan)) + s.assignedPlans,
+                        items = s.items + (plan.id to emptyList()),
+                        behaviors = s.behaviors + (plan.id to emptyList()),
+                    )
+                }
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = summarize(t, "Could not register own plan.")) }
+            }
+        }
+    }
+
+    fun deleteOwnPlan(plan: TrainingPlan) {
+        viewModelScope.launch {
+            try {
+                service.deletePlan(plan.id)
+                _state.update { s ->
+                    s.copy(
+                        assignedPlans = s.assignedPlans.filterNot { it.plan.id == plan.id },
+                        items = s.items - plan.id,
+                        behaviors = s.behaviors - plan.id,
+                    )
+                }
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = summarize(t, "Could not delete plan.")) }
+            }
+        }
+    }
+
+    fun updateSharing(ap: AssignedPlan, isShared: Boolean) {
+        // Optimistic in-memory update, revert on failure.
+        _state.update { s ->
+            s.copy(assignedPlans = s.assignedPlans.map {
+                if (it.assignment.id == ap.assignment.id)
+                    it.copy(assignment = it.assignment.copy(isShared = isShared))
+                else it
+            })
+        }
+        viewModelScope.launch {
+            try {
+                service.updateAssignmentSharing(ap.assignment.id, isShared)
+            } catch (t: Throwable) {
+                _state.update { s ->
+                    s.copy(
+                        errorMessage = summarize(t, "Could not update sharing."),
+                        assignedPlans = s.assignedPlans.map {
+                            if (it.assignment.id == ap.assignment.id)
+                                it.copy(assignment = it.assignment.copy(isShared = !isShared))
+                            else it
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    fun updateAssignmentPet(ap: AssignedPlan, petId: String?) {
+        _state.update { s ->
+            s.copy(assignedPlans = s.assignedPlans.map {
+                if (it.assignment.id == ap.assignment.id)
+                    it.copy(assignment = it.assignment.copy(petId = petId))
+                else it
+            })
+        }
+        viewModelScope.launch {
+            try {
+                service.updateAssignmentPet(ap.assignment.id, petId)
+            } catch (t: Throwable) {
+                _state.update { it.copy(errorMessage = summarize(t, "Could not link pet.")) }
+                load() // resync from server on failure
             }
         }
     }

@@ -95,7 +95,7 @@ fun PlanListScreen(
             PlanFormScreen(
                 editing = null,
                 isSaving = state.isLoading,
-                onCreate = { title, description ->
+                onCreate = { title, description, _ ->
                     viewModel.createPlan(title, description)
                     scope.launch {
                         sheetState.hide()
