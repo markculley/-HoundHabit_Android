@@ -101,7 +101,29 @@ fun PlanDetailScreen(
         }
     }
 
-    if (plan == null) return
+    if (plan == null) {
+        // First-load (state.plans not populated yet) or just-deleted. The
+        // LaunchedEffect above pops back in the second case; show a spinner
+        // in the meantime instead of a blank flash.
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { androidx.compose.material3.CircularProgressIndicator() }
+        }
+        return
+    }
 
     Scaffold(
         topBar = {

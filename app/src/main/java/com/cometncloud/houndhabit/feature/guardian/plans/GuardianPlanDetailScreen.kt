@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -88,7 +89,30 @@ fun GuardianPlanDetailScreen(
         }
     }
 
-    if (ap == null) return
+    if (ap == null) {
+        // Either still loading on first launch, or the assignment was just
+        // deleted; the LaunchedEffect above already kicks us back in the
+        // latter case. Show a spinner in the meantime instead of a blank
+        // surface flash.
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+        }
+        return
+    }
 
     val planId = ap.plan.id
     val ordered = viewModel.orderedItems(planId)

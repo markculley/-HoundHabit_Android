@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,9 +53,11 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.core.content.ContextCompat
 import com.cometncloud.houndhabit.core.models.LinkedTrainer
+import com.cometncloud.houndhabit.core.services.AuthService
 import com.cometncloud.houndhabit.core.services.InviteService
 import com.cometncloud.houndhabit.shared.notifications.DailyReminderPrefs
 import com.cometncloud.houndhabit.shared.notifications.DailyReminderScheduler
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import java.text.DateFormat
@@ -73,6 +76,11 @@ fun SettingsScreen(
     val snackbar = remember { SnackbarHostState() }
     var linkedTrainer by remember { mutableStateOf<LinkedTrainer?>(null) }
     val service = remember { InviteService() }
+    val authService = remember { AuthService() }
+    val scope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showDeleted by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
 
     LaunchedEffect(isTrainer) {
         if (!isTrainer) {
@@ -95,11 +103,20 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             CardSection(label = "Account") {
-                Text(
-                    "Profile editing arrives in Phase 12.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Permanently deletes your account and all associated data. This cannot be undone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isDeleting,
+                    ) {
+                        Text("Delete Account", color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
 
             CardSection(label = "Notifications") {
@@ -179,6 +196,67 @@ fun SettingsScreen(
                 Text("Sign Out", color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
+            title = { Text("Delete account?") },
+            text = {
+                Text(
+                    "This permanently deletes your profile, pets, training records, plans, " +
+                        "comments, and any uploaded photos. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = {
+                        scope.launch {
+                            isDeleting = true
+                            try {
+                                authService.deleteAccount()
+                                showDeleteConfirm = false
+                                showDeleted = true
+                            } catch (t: Throwable) {
+                                snackbar.showSnackbar(
+                                    t.message ?: "Could not delete account.",
+                                )
+                            } finally {
+                                isDeleting = false
+                            }
+                        }
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = { showDeleteConfirm = false },
+                ) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Confirmation screen — per CLAUDE.md, sign-out fires ONLY when the user
+    // dismisses this, not inside the service method.
+    if (showDeleted) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleted = false
+                onSignOut()
+            },
+            title = { Text("Account Deleted") },
+            text = { Text("Your account and all associated data have been removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleted = false
+                    onSignOut()
+                }) { Text("OK") }
+            },
+        )
     }
 }
 

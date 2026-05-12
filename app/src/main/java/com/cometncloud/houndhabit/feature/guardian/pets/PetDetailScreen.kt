@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -106,13 +107,17 @@ fun PetDetailScreen(
         if (pet == null) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.TopCenter,
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    "Pet not found.",
-                    modifier = Modifier.padding(32.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (state.isLoading) {
+                    CircularProgressIndicator()
+                } else {
+                    Text(
+                        "Pet not found.",
+                        modifier = Modifier.padding(32.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         } else {
             Column(
