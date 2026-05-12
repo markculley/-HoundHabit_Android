@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.cometncloud.houndhabit.core.SupabaseClient
 import com.cometncloud.houndhabit.core.models.Role
 import com.cometncloud.houndhabit.core.services.AuthService
+import com.cometncloud.houndhabit.shared.error.ErrorStore
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,8 +51,9 @@ class MainViewModel(
     }
 
     private suspend fun resolveAuthenticatedRoute(): AppRoute {
-        val profile = runCatching { authService.currentProfile() }.getOrNull()
-        return when (profile?.role) {
+        val result = runCatching { authService.currentProfile() }
+        result.exceptionOrNull()?.let { ErrorStore.emit(it, "Could not load your profile.") }
+        return when (result.getOrNull()?.role) {
             Role.Guardian -> AppRoute.Guardian
             Role.Trainer -> AppRoute.Trainer
             null -> AppRoute.Loading // profile trigger may not have run yet; sessionStatus will re-emit
