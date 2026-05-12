@@ -15,21 +15,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -38,7 +44,9 @@ import com.cometncloud.houndhabit.core.models.LinkedGuardian
 import com.cometncloud.houndhabit.core.models.Pet
 import com.cometncloud.houndhabit.core.models.TrainingRecord
 import com.cometncloud.houndhabit.core.models.label
+import com.cometncloud.houndhabit.feature.guardian.resources.ResourceFormScreen
 import com.cometncloud.houndhabit.shared.components.StatusBadge
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import java.text.DateFormat
@@ -54,6 +62,9 @@ fun GuardianDetailScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    var showAddResource by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(guardian.id) { viewModel.load(guardian) }
     LaunchedEffect(state.errorMessage) {
@@ -61,6 +72,14 @@ fun GuardianDetailScreen(
         if (msg != null) {
             snackbar.showSnackbar(msg)
             viewModel.clearError()
+        }
+    }
+    // Dismiss the add-resource sheet on save success.
+    LaunchedEffect(state.lastResourceSavedAt) {
+        if (state.lastResourceSavedAt != null && showAddResource) {
+            scope.launch { sheetState.hide() }
+            showAddResource = false
+            snackbar.showSnackbar("Resource added.")
         }
     }
 
@@ -71,6 +90,11 @@ fun GuardianDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showAddResource = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add resource")
                     }
                 },
             )
@@ -113,6 +137,31 @@ fun GuardianDetailScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (showAddResource) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddResource = false },
+            sheetState = sheetState,
+        ) {
+            ResourceFormScreen(
+                isSaving = state.isSavingResource,
+                onSave = { kind, title, urlText, body, photoBytes ->
+                    viewModel.addResourceForGuardian(
+                        guardian = guardian,
+                        kind = kind,
+                        title = title,
+                        urlText = urlText,
+                        body = body,
+                        photoBytes = photoBytes,
+                    )
+                },
+                onCancel = {
+                    scope.launch { sheetState.hide() }
+                    showAddResource = false
+                },
+            )
         }
     }
 }

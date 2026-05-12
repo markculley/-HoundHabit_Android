@@ -2,13 +2,18 @@ package com.cometncloud.houndhabit.feature.trainer.guardians
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cometncloud.houndhabit.core.SupabaseClient
 import com.cometncloud.houndhabit.core.models.Comment
 import com.cometncloud.houndhabit.core.models.LinkedGuardian
 import com.cometncloud.houndhabit.core.models.Pet
+import com.cometncloud.houndhabit.core.models.ResourceKind
 import com.cometncloud.houndhabit.core.models.TrainingRecord
 import com.cometncloud.houndhabit.core.services.CommentService
 import com.cometncloud.houndhabit.core.services.PetService
+import com.cometncloud.houndhabit.core.services.ResourceService
+import com.cometncloud.houndhabit.core.services.StorageService
 import com.cometncloud.houndhabit.core.services.TrainingRecordService
+import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,12 +21,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class GuardianDetailUiState(
     val pets: List<Pet> = emptyList(),
     val records: List<TrainingRecord> = emptyList(),
     val comments: Map<String, List<Comment>> = emptyMap(),
     val isLoading: Boolean = false,
+    val isSavingResource: Boolean = false,
+    val lastResourceSavedAt: Long? = null,
     val errorMessage: String? = null,
 )
 
@@ -36,6 +44,8 @@ class GuardianDetailViewModel(
     private val petService: PetService = PetService(),
     private val recordService: TrainingRecordService = TrainingRecordService(),
     private val commentService: CommentService = CommentService(),
+    private val resourceService: ResourceService = ResourceService(),
+    private val storageService: StorageService = StorageService(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(GuardianDetailUiState())
@@ -100,4 +110,65 @@ class GuardianDetailViewModel(
 
     fun petName(petId: String): String =
         _state.value.pets.firstOrNull { it.id == petId }?.name ?: "Unknown Pet"
+
+    /**
+     * Trainer creates a resource for [guardian]. Photos upload to the
+     * `resources` bucket first (path `{guardianId}/{resourceId}.jpg`); the
+     * resulting public URL is stored in the resource row.
+     *
+     * Sets `added_by_id = trainer.id`, `guardian_id = guardian.guardianId` —
+     * RLS allows the insert because the trainer is linked to the guardian.
+     */
+    fun addResourceForGuardian(
+        guardian: LinkedGuardian,
+        kind: ResourceKind,
+        title: String,
+        urlText: String?,
+        body: String?,
+        photoBytes: ByteArray?,
+    ) {
+        val trainerId = SupabaseClient.client.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isSavingResource = true, errorMessage = null) }
+            try {
+                val resourceId = UUID.randomUUID().toString()
+                val resolvedUrl = when (kind) {
+                    ResourceKind.Photo -> {
+                        if (photoBytes == null) {
+                            _state.update {
+                                it.copy(errorMessage = "Pick a photo before saving.")
+                            }
+                            return@launch
+                        }
+                        storageService.uploadResourcePhoto(
+                            bytes = photoBytes,
+                            guardianId = guardian.guardianId,
+                            resourceId = resourceId,
+                        )
+                    }
+                    ResourceKind.Url -> urlText?.trim()?.ifEmpty { null }
+                    ResourceKind.Note -> null
+                }
+
+                resourceService.createResourceForGuardian(
+                    guardianId = guardian.guardianId,
+                    addedById = trainerId,
+                    kind = kind,
+                    title = title,
+                    url = resolvedUrl,
+                    body = body,
+                    resourceId = resourceId,
+                )
+                _state.update {
+                    it.copy(lastResourceSavedAt = System.currentTimeMillis())
+                }
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(errorMessage = t.message ?: "Could not save resource.")
+                }
+            } finally {
+                _state.update { it.copy(isSavingResource = false) }
+            }
+        }
+    }
 }
