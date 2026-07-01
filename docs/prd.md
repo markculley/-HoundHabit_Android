@@ -18,14 +18,12 @@ A training tracker that is needed by pet owners to bridge the gap between the la
 
 ## What it Does Do
 
-- Gives Guardians rewards for making progress
 - Enables guardians to track Training Sessions
 - Enables guardians to track more than one pet
 - Enables guardians to share training results
 - Enables guardians to store video recording or photos of their or a pet
 - Enables guardians to read Trainer-delivered notes
 - Enables Trainers to deliver training plans to guardians
-- Enables Guardians to create and manage their own training plans (no Trainer required)
 
 
 ## build artifacts
@@ -76,12 +74,6 @@ For any back office services required assume that AWS will be used.
 ### Create a Pet
 
 - Create a *Pet Record*
-
-### Create a Training Plan (self-directed)
-
-- Guardian can create their own Training Plan without a Trainer
-- Full Behavior → Step authoring tools available
-- Guardian is both owner and practitioner of the plan
 
 ### Remind Me
 
@@ -156,10 +148,10 @@ For any back office services required assume that AWS will be used.
 - Body lists Behavior names with an "Add Behavior" button
 
 ### Behavior
-- Properties: Name, ordered list of Steps
-- When entering a Behavior name, the app suggests these defaults:
+- Properties: Type, ordered list of Steps
+- A Behavior's name is either one of the **12 standard behaviors** or a **custom trainer-typed name** (free text, 1–40 chars). The form offers the 12 as suggestions:
   - Sit, Down, Leave It, Drop It, Stand, Wait/Stay, Walk, Touch, Go to Mat, Recall, Off, Attention
-- Tapping a Behavior in the plan detail opens the Behavior detail view showing its name and Steps
+- Tapping a Behavior in the plan detail opens the Behavior detail view, which shows the behavior as the title and lists its Steps
 
 ### Step (Training Plan Item)
 - Properties: Title, Three D's (Distance, Duration, Distraction)
@@ -171,6 +163,7 @@ For any back office services required assume that AWS will be used.
 ## Attach Training Plan to Pet
 
 - If created separately of course
+- **Pet is required when a plan is assigned to a guardian.** A pet is only optional at plan-creation time — the trainer (or guardian) can draft a plan without any pet attached. Once that plan is being assigned to a guardian, a specific pet must be selected. If the guardian has no pets yet, the assignment is blocked until they add one.
 
 ## CRUD a Training Record
 
@@ -219,7 +212,7 @@ A Behavior is a child of a Training Plan and a parent of Steps.
 **Table Properties**
 
 - `plan_id` — FK to Training Plan
-- `name` — free text (trainer-entered; app suggests defaults)
+- `name` — the behavior name: one of the 12 standard behaviors **or** a custom trainer-typed name. Stored as the human-readable label (e.g. `"Sit"`, `"Wait/Stay"`). A DB `CHECK` constraint (`behaviors_name_nonempty`) enforces a non-empty trimmed name of 1–40 chars.
 - `sort_order` — display order within the plan
 
 ## Pet Record
@@ -278,3 +271,9 @@ Guardians can currently only receive resources from their trainer. In v2, a guar
 **Suggested approach:** Add `is_shared_with_trainer boolean NOT NULL DEFAULT false` to the `resources` table. Guardians can toggle sharing per resource. The trainer's guardian detail view shows shared resources alongside shared session records.
 
 For text messages, the existing comment thread on a training session already covers the immediate need in v1.
+
+## Guardian-Created Training Plans
+
+An earlier build let a guardian create and manage their own training plans without a trainer ("My Plans"). It was removed (see iOS card IOS-28 / the Android equivalent) — the flow was confusing alongside trainer-assigned plans, and a guardian authoring their own Behavior → Step plans is a meaningfully different product than the trainer-delivered model. Deferred to a future enhancement.
+
+If revisited: a guardian-created plan was just a `training_plans` row with `trainer_id` = the guardian's own user id, plus a self-assignment in `plan_assignments` where `trainer_id == guardian_id`. The enabling RLS policy (`"Guardian self-assigns own plans"` INSERT on `plan_assignments`) was dropped; restoring the feature means re-adding that policy (or equivalent) and the guardian-side authoring UI.

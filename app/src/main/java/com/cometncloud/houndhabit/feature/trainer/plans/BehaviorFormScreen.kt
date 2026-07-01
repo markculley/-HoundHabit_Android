@@ -36,6 +36,9 @@ private val SUGGESTIONS = listOf(
     "Go to Mat", "Recall", "Off", "Attention",
 )
 
+// DB CHECK (behaviors_name_nonempty) enforces 1..40 chars on the trimmed name.
+private const val MAX_NAME_LENGTH = 40
+
 @Composable
 fun BehaviorFormScreen(
     editing: Behavior?,
@@ -43,7 +46,7 @@ fun BehaviorFormScreen(
     onCancel: () -> Unit,
 ) {
     var name by remember(editing?.id) { mutableStateOf(editing?.name.orEmpty()) }
-    val canSave = name.trim().isNotEmpty()
+    val canSave = name.trim().let { it.isNotEmpty() && it.length <= MAX_NAME_LENGTH }
 
     Column(
         modifier = Modifier
@@ -58,11 +61,12 @@ fun BehaviorFormScreen(
 
         OutlinedTextField(
             value = name,
-            onValueChange = { name = it },
+            onValueChange = { name = it.take(MAX_NAME_LENGTH) },
             label = { Text("Name") },
             placeholder = { Text("e.g. Sit") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            supportingText = { Text("${name.length} / $MAX_NAME_LENGTH") },
             modifier = Modifier.fillMaxWidth(),
         )
 
