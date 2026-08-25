@@ -45,11 +45,7 @@ bin/
 
 # ---- Android Studio / IntelliJ ----
 *.iml
-/.idea/*
-!/.idea/.gitignore
-!/.idea/.name
-!/.idea/AndroidProjectSystem.xml
-!/.idea/runConfigurations.xml
+.idea/
 .navigation/
 captures/
 freeline/
