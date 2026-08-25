@@ -10,7 +10,7 @@ Reference state for this checklist:
 |---|---|
 | Package id | `com.cometncloud.houndhabit` |
 | `versionCode` | 1 (bump for every Play Console upload — must be monotonically increasing) |
-| `versionName` | 1.0 (user-visible — bump on feature releases) |
+| `versionName` | 1.0.0-alpha.1 (user-visible — bump on feature releases; keep in sync with the git tag) |
 | `minSdk` / `targetSdk` | 26 / 36 |
 | Privacy policy URL | `https://www.cometncloud.com/houndhabitprivacypolicy` (already in Settings) |
 | Permissions | `INTERNET`, `POST_NOTIFICATIONS`, `VIBRATE` |
