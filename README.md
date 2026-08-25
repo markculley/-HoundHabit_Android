@@ -6,9 +6,9 @@ backed by the same Supabase project as the iOS original.
 > ### ⚠️ Pre-release software
 >
 > **This is a pre-release version and is not yet generally available.** It has
-> not shipped to the Play Store — there is no public release, and no release
-> tag has been cut (`versionCode 1` / `versionName 1.0` are the initial
-> pre-release values). Builds are for development and internal testing only.
+> not shipped to the Play Store — the current release is the `v1.0.0-alpha.1`
+> alpha tag (`versionCode 1` / `versionName 1.0`). Builds are for development
+> and internal testing only.
 >
 > Expect incomplete features, unstable behavior, and breaking changes without
 > notice. Do not rely on it for real training records — data written by a
